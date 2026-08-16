@@ -1,7 +1,7 @@
 """
 optimize.py
 ===========
-Walk-forward Bayesian (Optuna/TPE) optimisation of the UltScript strategy.
+Walk-forward Bayesian (Optuna/TPE) optimisation of the MidasScript strategy.
 
 Design (expert-quant defaults):
   * Trade only from --base-start (default 2024-01-01). The past is ignored for

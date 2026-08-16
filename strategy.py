@@ -1,7 +1,7 @@
 """
 strategy.py
 ===========
-Faithful Python port of "Ultimate script v0.3.7" (UltScript.pine).
+Faithful Python port of "Ultimate script v0.3.7" (MidasScript.pine).
 
 This module is *pure signal generation*. It takes OHLC(V) arrays and the
 strategy parameters and returns, for every bar, everything the backtester needs:

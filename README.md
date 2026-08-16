@@ -1,12 +1,13 @@
-# UltScript
+# MidasScript
 
-Python port, backtester, and walk-forward optimizer for the "Ultimate script v0.3.7" Pine strategy, with a browser chart viewer.
+Python port, backtester, and walk-forward optimizer for a Pine Script trading
+strategy ("Ultimate script v0.3.7"), with a browser chart viewer.
 
 ## Files
 
 | File | Purpose |
 | --- | --- |
-| `UltScript.pine` | Original Pine Script strategy |
+| `MidasScript.pine` | Original Pine Script strategy |
 | `strategy.py` | Vectorized Python port of the signal logic |
 | `backtest.py` | Event-driven backtest engine + CLI |
 | `optimize.py` | Walk-forward optimization (Optuna) |
