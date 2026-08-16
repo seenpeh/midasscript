@@ -1,0 +1,349 @@
+//@version=5
+strategy("Ultimate script v0.3.7", overlay=true, calc_on_every_tick=false, pyramiding=100, process_orders_on_close=true)
+
+// ==============================================================================
+// HELPER FUNCTIONS
+// ==============================================================================
+f_body_size() => math.abs(close - open)
+f_avg_prev_body(m) => ta.sma(f_body_size(), m)[1]
+f_avg_prev_tr(m) => ta.sma(ta.tr(true), m)[1]
+
+// ==============================================================================
+// SECTION 1 — Trend Recognition
+// ==============================================================================
+grp_trend = "Section 1: Trend Filters"
+i_ema_fast = input.int(288, "Fast EMA Length", group=grp_trend)
+i_ema_slow = input.int(1380, "Slow EMA Length", group=grp_trend)
+
+ema_fast = ta.ema(close, i_ema_fast)
+ema_slow = ta.ema(close, i_ema_slow)
+
+plot(ema_fast, "EMA Fast", color=color.blue)
+plot(ema_slow, "EMA Slow", color=color.orange)
+
+long_allowed = ema_fast > ema_slow
+short_allowed = ema_fast < ema_slow
+
+// ==============================================================================
+// SECTION 2 — Trend Change Closure
+// ==============================================================================
+grp_trend_close = "Section 1.5: Trend Change Closure"
+
+// Toggle
+i_trend_close_enable = input.bool(true, "Enable Trend Change Closure", group=grp_trend_close)
+
+// Track trend direction
+var int prev_trend_dir = 0
+int curr_trend_dir = long_allowed ? 1 : short_allowed ? -1 : 0
+
+// Detect change
+bool trend_changed = (curr_trend_dir != prev_trend_dir) and (prev_trend_dir != 0)
+
+// Close trades only if toggle enabled
+if i_trend_close_enable and trend_changed
+    strategy.close_all(comment = "Trend Change Closure")
+
+// Update trend state
+prev_trend_dir := curr_trend_dir
+
+// ==============================================================================
+// SECTION 3 — Trigger Detection
+// ==============================================================================
+
+grp_t1 = "Section 2: Trigger 1 (Single Big Candle)"
+i_t1_en      = input.bool(true, "Enable Trigger 1", group=grp_t1)
+i_t1_n       = input.float(2.0, "Body Multiplier (n)", group=grp_t1)
+i_t1_tr_mult = input.float(0.5, "True Range Multiplier", group=grp_t1)
+i_t1_m       = input.int(4, "Lookback candles (m)", group=grp_t1)
+i_t1_rr_pri  = input.float(2.0, "Primary RR", group=grp_t1)
+i_t1_rr_alt  = input.float(3.0, "Alternative RR", group=grp_t1)
+i_t1_risk    = input.float(1.0, "Risk %", group=grp_t1)
+
+grp_t2 = "Section 2: Trigger 2 (Consecutive Candles)"
+i_t2_en      = input.bool(true, "Enable Trigger 2", group=grp_t2)
+i_t2_c       = input.int(3, "Number of Candles (c)", minval=2, group=grp_t2)
+i_t2_n       = input.float(2.0, "Body Multiplier (n)", group=grp_t2)
+i_t2_tr_mult = input.float(0.5, "True Range Multiplier", group=grp_t2)
+i_t2_m       = input.int(4, "Lookback candles (m)", group=grp_t2)
+i_t2_rr_pri  = input.float(2.0, "Primary RR", group=grp_t2)
+i_t2_rr_alt  = input.float(3.0, "Alternative RR", group=grp_t2)
+i_t2_risk    = input.float(1.0, "Risk %", group=grp_t2)
+
+grp_t3 = "Section 2: Trigger 3 (Engulfing SBC)"
+i_t3_en      = input.bool(true, "Enable Trigger 3", group=grp_t3)
+i_t3_n       = input.float(2.0, "Body Multiplier (n)", group=grp_t3)
+i_t3_tr_mult = input.float(0.5, "True Range Multiplier", group=grp_t3)
+i_t3_m       = input.int(4, "Lookback candles (m)", group=grp_t3)
+i_t3_rr_pri  = input.float(2.0, "Primary RR", group=grp_t3)
+i_t3_rr_alt  = input.float(3.0, "Alternative RR", group=grp_t3)
+i_t3_risk    = input.float(1.0, "Risk %", group=grp_t3)
+
+// Trigger 1 SBC logic (body + TR)
+t1_avg_body = f_avg_prev_body(i_t1_m)
+t1_avg_tr   = f_avg_prev_tr(i_t1_m)
+
+is_sbc_bull = close > open and f_body_size() >= (i_t1_n * t1_avg_body) and ta.tr(true) >= (i_t1_tr_mult * t1_avg_tr)
+is_sbc_bear = close < open and f_body_size() >= (i_t1_n * t1_avg_body) and ta.tr(true) >= (i_t1_tr_mult * t1_avg_tr)
+
+t1_bull = i_t1_en and is_sbc_bull and long_allowed
+t1_bear = i_t1_en and is_sbc_bear and short_allowed
+
+// Trigger 2 logic (consecutive candles + TR)
+t2_avg_body = f_avg_prev_body(i_t2_m)
+t2_avg_tr   = f_avg_prev_tr(i_t2_m)
+
+bool is_consec_bull = true
+bool is_consec_bear = true
+bool no_sbc_bull_c  = true
+bool no_sbc_bear_c  = true
+
+float union_max = math.max(open, close)
+float union_min = math.min(open, close)
+
+for i = 0 to i_t2_c - 1
+    if close[i] <= open[i]
+        is_consec_bull := false
+    if i < i_t2_c - 1 and low[i] <= low[i+1]
+        is_consec_bull := false
+    if is_sbc_bull[i]
+        no_sbc_bull_c := false
+        
+    if close[i] >= open[i]
+        is_consec_bear := false
+    if i < i_t2_c - 1 and high[i] >= high[i+1]
+        is_consec_bear := false
+    if is_sbc_bear[i]
+        no_sbc_bear_c := false
+        
+    union_max := math.max(union_max, math.max(open[i], close[i]))
+    union_min := math.min(union_min, math.min(open[i], close[i]))
+
+float union_body = union_max - union_min
+bool valid_union = union_body >= (i_t2_n * t2_avg_body) and ta.tr(true) >= (i_t2_tr_mult * t2_avg_tr)
+
+t2_bull = i_t2_en and is_consec_bull and no_sbc_bull_c and valid_union and long_allowed
+t2_bear = i_t2_en and is_consec_bear and no_sbc_bear_c and valid_union and short_allowed
+
+// Trigger 3 Engulfing SBC logic (body + TR)
+t3_avg_body = f_avg_prev_body(i_t3_m)
+t3_avg_tr   = f_avg_prev_tr(i_t3_m)
+
+is_t3_sbc_bull = close > open and f_body_size() >= (i_t3_n * t3_avg_body) and ta.tr(true) >= (i_t3_tr_mult * t3_avg_tr)
+is_t3_sbc_bear = close < open and f_body_size() >= (i_t3_n * t3_avg_body) and ta.tr(true) >= (i_t3_tr_mult * t3_avg_tr)
+
+t3_bull = i_t3_en and is_t3_sbc_bull and is_sbc_bear[1] and long_allowed
+t3_bear = i_t3_en and is_t3_sbc_bear and is_sbc_bull[1] and short_allowed
+
+// Consolidate Triggers (priority: T3 > T1 > T2)
+var bool   trade_signal = false
+var int    trigger_direction = 0
+var float  stop_loss_price = na
+var float  primary_rr = na
+var float  alternative_rr = na
+var float  primary_take_profit = na
+var float  alternative_take_profit = na
+var string trigger_reason = ""
+var float  final_risk_amount = na
+var float  trigger_avg_body = na
+
+trade_signal := false
+trigger_direction := 0
+
+if t3_bull
+    trade_signal := true
+    trigger_direction := 1
+    trigger_reason := "Engulfing Single Big Candle"
+    stop_loss_price := open
+    primary_rr := i_t3_rr_pri
+    alternative_rr := i_t3_rr_alt
+    final_risk_amount := i_t3_risk
+    trigger_avg_body := t3_avg_body
+
+else if t3_bear
+    trade_signal := true
+    trigger_direction := -1
+    trigger_reason := "Engulfing Single Big Candle"
+    stop_loss_price := open
+    primary_rr := i_t3_rr_pri
+    alternative_rr := i_t3_rr_alt
+    final_risk_amount := i_t3_risk
+    trigger_avg_body := t3_avg_body
+
+else if t1_bull
+    trade_signal := true
+    trigger_direction := 1
+    trigger_reason := "Single Big Candle"
+    stop_loss_price := open
+    primary_rr := i_t1_rr_pri
+    alternative_rr := i_t1_rr_alt
+    final_risk_amount := i_t1_risk
+    trigger_avg_body := t1_avg_body
+
+else if t1_bear
+    trade_signal := true
+    trigger_direction := -1
+    trigger_reason := "Single Big Candle"
+    stop_loss_price := open
+    primary_rr := i_t1_rr_pri
+    alternative_rr := i_t1_rr_alt
+    final_risk_amount := i_t1_risk
+    trigger_avg_body := t1_avg_body
+
+else if t2_bull
+    trade_signal := true
+    trigger_direction := 1
+    trigger_reason := "Consecutive Candles"
+    stop_loss_price := open[i_t2_c - 1]
+    primary_rr := i_t2_rr_pri
+    alternative_rr := i_t2_rr_alt
+    final_risk_amount := i_t2_risk
+    trigger_avg_body := t2_avg_body
+
+else if t2_bear
+    trade_signal := true
+    trigger_direction := -1
+    trigger_reason := "Consecutive Candles"
+    stop_loss_price := open[i_t2_c - 1]
+    primary_rr := i_t2_rr_pri
+    alternative_rr := i_t2_rr_alt
+    final_risk_amount := i_t2_risk
+    trigger_avg_body := t2_avg_body
+
+// ==============================================================================
+// SECTION 3.5 — Dynamic Stop Loss
+// ==============================================================================
+grp_dyn_sl = "Section 3.5: Dynamic Stop Loss"
+i_dyn_sl_enable       = input.bool(true, "Enable Dynamic Stop Loss", group=grp_dyn_sl)
+i_max_size_candle     = input.float(3.0, "Max Size Candle Multiplier", group=grp_dyn_sl)
+i_min_stop_loss_ratio = input.float(20.0, "Tighten SL Ratio (%)", group=grp_dyn_sl)
+
+if trade_signal and i_dyn_sl_enable
+    float initial_sl_dist = math.abs(close - stop_loss_price)
+    if initial_sl_dist > (i_max_size_candle * trigger_avg_body)
+        float tighten_dist = initial_sl_dist * (i_min_stop_loss_ratio / 100)
+        float new_sl_dist = initial_sl_dist - tighten_dist
+        stop_loss_price := trigger_direction == 1 ? close - new_sl_dist : close + new_sl_dist
+
+// ==============================================================================
+// SECTION 4 — TP Calculation
+// ==============================================================================
+if trade_signal
+    float sl_dist = math.abs(close - stop_loss_price)
+    primary_take_profit := trigger_direction == 1 ? close + sl_dist * primary_rr : close - sl_dist * primary_rr
+    alternative_take_profit := trigger_direction == 1 ? close + sl_dist * alternative_rr : close - sl_dist * alternative_rr
+
+// ==============================================================================
+// SECTION 5 — RR Selection
+// ==============================================================================
+var float final_rr = na
+var float final_take_profit = na
+
+if trade_signal
+    bool price_above_ema = close > ema_fast
+    if price_above_ema and trigger_direction == 1
+        final_rr := primary_rr
+        final_take_profit := primary_take_profit
+    else if price_above_ema and trigger_direction == -1
+        final_rr := alternative_rr
+        final_take_profit := alternative_take_profit
+    else if not price_above_ema and trigger_direction == 1
+        final_rr := alternative_rr
+        final_take_profit := alternative_take_profit
+    else if not price_above_ema and trigger_direction == -1
+        final_rr := primary_rr
+        final_take_profit := primary_take_profit
+
+// ==============================================================================
+// SECTION 6 — Time Restrictions
+// ==============================================================================
+grp_time = "Section 3.5: Time Restrictions (UTC)"
+i_res_start_hr  = input.int(20, "Restricted Start Hour", group=grp_time)
+i_res_start_min = input.int(30, "Restricted Start Minute", group=grp_time)
+i_res_mid_hr    = input.int(21, "Restricted Middle Hour", group=grp_time)
+i_res_end_hr    = input.int(22, "Restricted End Hour", group=grp_time)
+i_res_end_min   = input.int(5, "Restricted End Minute", group=grp_time)
+
+i_close_hr      = input.int(20, "Close Positions Hour", group=grp_time)
+i_close_min     = input.int(50, "Close Positions Minute", group=grp_time)
+
+int cur_hour = hour(time, "UTC")
+int cur_min = minute(time, "UTC")
+
+bool is_restricted_time = 
+     (cur_hour == i_res_start_hr and cur_min >= i_res_start_min) or 
+     (cur_hour == i_res_mid_hr) or 
+     (cur_hour == i_res_end_hr and cur_min <= i_res_end_min)
+
+if is_restricted_time
+    trade_signal := false
+
+bool is_close_time = (cur_hour == i_close_hr and cur_min == i_close_min)
+if is_close_time
+    strategy.close_all(comment="Time Exit")
+
+// ==============================================================================
+// SECTION 6.5 — Daily Loss Limit
+// ==============================================================================
+grp_dll = "Section 6.5: Daily Loss Limit"
+i_dll_enable = input.bool(true, "Enable Daily Loss Limit", group=grp_dll)
+i_dll_loss_pct = input.float(4.0, "Daily Loss Limit (%)", group=grp_dll)
+i_dll_reset_hr = input.int(22, "Reset Hour (UTC)", group=grp_dll)
+i_dll_reset_min = input.int(0, "Reset Minute (UTC)", group=grp_dll)
+
+var float saved_equity = na
+var bool dll_active = false
+
+int shifted_time = time - (i_dll_reset_hr * 60 * 60 * 1000 + i_dll_reset_min * 60 * 1000)
+int current_trading_day = dayofmonth(shifted_time, "UTC")
+var int last_trading_day = na
+
+bool is_reset_time = false
+if na(last_trading_day) or current_trading_day != last_trading_day
+    is_reset_time := true
+    last_trading_day := current_trading_day
+
+if is_reset_time
+    saved_equity := strategy.equity
+    dll_active := false
+
+if na(saved_equity)
+    saved_equity := strategy.equity
+
+if i_dll_enable and not dll_active
+    if strategy.equity <= saved_equity * (1 - i_dll_loss_pct / 100)
+        dll_active := true
+
+if i_dll_enable and dll_active
+    trade_signal := false
+
+// ==============================================================================
+// SECTION 7 — Position Sizing
+// ==============================================================================
+var float quantity = na
+
+if trade_signal
+    float trade_risk = math.abs(close - stop_loss_price)
+    if trade_risk > 0
+        quantity := (strategy.equity * (final_risk_amount / 100)) / trade_risk
+    else
+        trade_signal := false
+
+// ==============================================================================
+// SECTION 8 — Trade Execution
+// ==============================================================================
+if trade_signal
+    string trade_id = str.tostring(bar_index)
+    string label_text = trigger_reason + "\nRisk = " + str.tostring(final_risk_amount) + "%\nRR = 1:" + str.tostring(final_rr)
+
+    label_y = trigger_direction == 1 ? low : high
+    label_style = trigger_direction == 1 ? label.style_label_up : label.style_label_down
+    label_color = trigger_direction == 1 ? color.new(color.green, 50) : color.new(color.red, 50)
+
+    label.new(bar_index, label_y, label_text, style=label_style, color=label_color, textcolor=color.white, size=size.small)
+
+    if trigger_direction == 1
+        strategy.entry("Long_" + trade_id, strategy.long, qty=quantity)
+        strategy.exit("Exit_Long_" + trade_id, "Long_" + trade_id, stop=stop_loss_price, limit=final_take_profit)
+    else
+        strategy.entry("Short_" + trade_id, strategy.short, qty=quantity)
+        strategy.exit("Exit_Short_" + trade_id, "Short_" + trade_id, stop=stop_loss_price, limit=final_take_profit)

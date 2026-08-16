@@ -1,0 +1,91 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "ultscript",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": ["serve.py", "--port", "8765"],
+      "port": 8765
+    },
+    {
+      "name": "score-hero",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "/Users/seenbook/Documents/Projects/score-hero-three-prototype/server.js"
+      ],
+      "port": 5173
+    },
+    {
+      "name": "hand-gesture-trainer",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": [
+        "-m",
+        "http.server",
+        "8123",
+        "--directory",
+        "/Users/seenbook/Documents/Projects/HandGestureTrainer"
+      ],
+      "port": 8123
+    },
+    {
+      "name": "pawzzle",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": [
+        "-m",
+        "http.server",
+        "5174",
+        "--directory",
+        "/Users/seenbook/Documents/Projects/Pawzzle"
+      ],
+      "port": 5174
+    },
+    {
+      "name": "tire-roller",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": [
+        "-m",
+        "http.server",
+        "4317",
+        "--directory",
+        "/Users/seenbook/Documents/Projects/Tire Roller"
+      ],
+      "port": 4317
+    },
+    {
+      "name": "neon-ronin",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": [
+        "-m",
+        "http.server",
+        "8461",
+        "--directory",
+        "/Users/seenbook/Documents/Projects/Neon Ronin"
+      ],
+      "port": 8461
+    },
+    {
+      "name": "airbeats",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": [
+        "-m",
+        "http.server",
+        "6048",
+        "--directory",
+        "/Users/seenbook/Documents/Projects/AirBeats"
+      ],
+      "port": 6048
+    },
+    {
+      "name": "blindfold",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": [
+        "-m",
+        "http.server",
+        "4178",
+        "--directory",
+        "/Users/seenbook/Documents/Projects/Blindfold Chess Trainer"
+      ],
+      "port": 4178
+    }
+  ]
+}

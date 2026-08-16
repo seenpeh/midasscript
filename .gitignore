@@ -1,0 +1,10 @@
+.DS_Store
+__pycache__/
+*.pyc
+
+# Large generated/market data (not tracked)
+data.csv
+5m_candles.json
+5m_candles_chart.json
+results.json
+opt_results.json

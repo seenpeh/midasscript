@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(sed -n '2p' data.csv)",
+      "Bash(sed -n '2,21p' data.csv)",
+      "Bash(python3 -)"
+    ]
+  }
+}
