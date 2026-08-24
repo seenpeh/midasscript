@@ -40,6 +40,7 @@ import optimize as OPT
 # ---------------------------------------------------------------------------
 class State:
     epoch = o = h = l = c = v = None
+    holes = []
     capital = 10000.0
     chart_days = 730.0
     lock = threading.Lock()
@@ -47,7 +48,8 @@ class State:
 
 
 def load_data(path: str):
-    State.epoch, State.o, State.h, State.l, State.c, State.v = B.load_candles(path)
+    (State.epoch, State.o, State.h, State.l, State.c, State.v,
+     State.holes) = B.load_candles(path)
 
 
 class OptState:
@@ -186,6 +188,7 @@ class Handler(BaseHTTPRequestHandler):
                   flush=True)
             stats = B.run_once(
                 State.epoch, State.o, State.h, State.l, State.c, State.v,
+                holes=State.holes,
                 capital=capital, params=params,
                 start_ts=start_ts, end_ts=end_ts,
                 chart_days=chart_days, quiet=True,
@@ -208,7 +211,8 @@ class Handler(BaseHTTPRequestHandler):
         try:
             cfg = _cfg_from_body(body)
             arrays = OPT.prepare_arrays(
-                (State.epoch, State.o, State.h, State.l, State.c, State.v),
+                (State.epoch, State.o, State.h, State.l, State.c, State.v,
+                 State.holes),
                 OPT.to_ts(cfg["base_start"]),
                 OPT.to_ts(cfg["base_end"]) if cfg.get("base_end") else None)
             est = OPT.estimate_seconds(arrays, cfg)
@@ -240,7 +244,8 @@ class Handler(BaseHTTPRequestHandler):
         def worker():
             try:
                 arrays = OPT.prepare_arrays(
-                    (State.epoch, State.o, State.h, State.l, State.c, State.v),
+                    (State.epoch, State.o, State.h, State.l, State.c, State.v,
+                     State.holes),
                     OPT.to_ts(cfg["base_start"]),
                     OPT.to_ts(cfg["base_end"]) if cfg.get("base_end") else None)
 

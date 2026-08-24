@@ -68,7 +68,7 @@ def add_months(ts, months):
 # data prep — slice to [base_start - warmup, end]
 # ---------------------------------------------------------------------------
 def prepare_arrays(full, base_start_ts, base_end_ts=None, warmup_bars=WARMUP_BARS):
-    epoch, o, h, l, c, v = full
+    epoch, o, h, l, c, v, holes = full
     i_base = int(np.searchsorted(epoch, base_start_ts))
     i0 = max(0, i_base - warmup_bars)
     # upper slice at base_end (indicators are backward-looking, so trimming the
@@ -77,7 +77,12 @@ def prepare_arrays(full, base_start_ts, base_end_ts=None, warmup_bars=WARMUP_BAR
     if base_end_ts:
         i1 = min(len(epoch), int(np.searchsorted(epoch, base_end_ts, side="right")) + 2)
     sl = slice(i0, i1)
-    return (epoch[sl], o[sl], h[sl], l[sl], c[sl], v[sl])
+    hi = i1 if i1 is not None else len(epoch)
+    # re-index the data holes onto the slice; the engine needs them to know
+    # where it must not carry a position (see backtest.run)
+    sub_holes = [dict(x, i=int(x["i"]) - i0) for x in (holes or [])
+                 if i0 <= int(x["i"]) < hi - 1]
+    return (epoch[sl], o[sl], h[sl], l[sl], c[sl], v[sl], sub_holes)
 
 
 # ---------------------------------------------------------------------------
@@ -176,11 +181,11 @@ def apply_named(values, base=None, groups=None):
 # evaluation + objective
 # ---------------------------------------------------------------------------
 def evaluate(arrays, params, capital, start_ts, end_ts, ruin_floor):
-    epoch, o, h, l, c, v = arrays
+    epoch, o, h, l, c, v, holes = arrays
     closed, eqpts, initial, realized, ruin, i0, i1 = B.run(
         epoch, o, h, l, c, v, params, capital,
         quiet=True, log=False, ruin_floor=ruin_floor,
-        start_ts=start_ts, end_ts=end_ts)
+        start_ts=start_ts, end_ts=end_ts, holes=holes)
     stats = B.compute_stats(closed, eqpts, initial, realized, epoch, i0, i1)
     if ruin:
         stats["ruined"] = True
@@ -496,7 +501,7 @@ def main():
     if optuna is None:
         raise SystemExit("optuna is not installed (pip install optuna).")
 
-    full = B.load_candles(args.data)
+    full = B.load_candles(args.data)   # (epoch, o, h, l, c, v, holes)
     cfg = default_cfg(groups=args.groups, trials=args.trials,
                       final_trials=args.final_trials, n_parts=args.parts,
                       base_start=args.base_start, base_end=args.base_end,

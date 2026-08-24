@@ -13,16 +13,54 @@ strategy ("Ultimate script v0.3.7"), with a browser chart viewer.
 | `optimize.py` | Walk-forward optimization (Optuna) |
 | `serve.py` | Static server + `/api/run`, `/api/optimize/*` |
 | `index.html` | TradingView-style viewer (lightweight-charts) |
-| `convert_csv.py` | `data.csv` → compact `5m_candles.json` |
+| `convert_csv.py` | `data.csv` → cleaned, gap-checked `5m_candles.json` |
+| `timeframes.py` | Gap detection + 5m → 15m/1h/4h/1D resampling, shared by the backtester and the browser chart |
 
 ## Data
 
-Not tracked (too large). Supply `data.csv` as semicolon-separated
-`Date;Open;High;Low;Close;Volume` with dates like `2004.06.11 07:15`, then run:
+Not tracked (too large). Supply `data.csv` (or `~/XAU_5m_data.csv`) as
+semicolon-separated `Date;Open;High;Low;Close;Volume` with dates like
+`2004.06.11 07:15`, then run:
 
 ```bash
 python3 convert_csv.py
 ```
+
+Conversion sorts by time, drops duplicate timestamps (keeping the latest),
+drops bars with impossible OHLC (non-positive prices, `high < low`, etc.), and
+prints an integrity report. It also classifies every gap in the feed as either
+a normal market closure (weekend/holiday, harmless) or a **data hole** — a
+stretch longer than 96h where bars are simply missing — and writes the holes
+into `5m_candles.json` under `"holes"`. Re-check any existing file without
+reconverting:
+
+```bash
+python3 timeframes.py --data 5m_candles.json --tf 1h
+```
+
+### Why this matters for backtesting
+
+A raw vendor feed is not one continuous 5-minute grid — the XAU_5m file used
+here has two multi-day data holes (32 days in Sep–Oct 2025, 9 days in Jan
+2026, plus two ~4.5-day holes in 2005/2006). Before this fix, the backtester
+would happily "hold" a position across a hole and its stop-loss/take-profit
+logic would fire on the reopening bar as if the intervening 32 days of price
+action had simply not existed — turning a 14.7% overnight-equivalent jump into
+a single unrealistic fill. Two changes fix this:
+
+1. **`backtest.py` flattens every open position at the close of the last bar
+   before a hole** (exit reason `DataGap`) and blocks new entries for
+   `--gap-warmup` bars after one, instead of carrying positions through a void
+   the feed never recorded. Disable with `--no-gap-flat` to reproduce the old
+   behaviour.
+2. **Resampling to a higher timeframe never lets a bucket span a hole.** The
+   first bar after a hole always opens a fresh 15m/1h/4h/1D candle, so (say)
+   the daily chart can't merge 2025-09-12 with 2025-10-15 into one bar with a
+   $537 range.
+
+The chart marks each hole with an orange "no data" marker on every timeframe
+(toggle with the **Gaps** button) so you can see exactly where the feed — and
+therefore the backtest — goes quiet.
 
 ## Usage
 
@@ -37,6 +75,20 @@ python3 backtest.py --quiet
 ```bash
 python3 optimize.py --groups risk_exposure rr signal
 ```
+
+## Multi-timeframe chart
+
+The viewer always trades and stores results on the underlying **5-minute**
+bars — that never changes. What you *look at* is a separate choice: the
+**5m / 15m / 1h / 4h / 1D** segmented control in the chart toolbar
+re-aggregates the same 5m candles in the browser (open of the first bar, max
+high, min low, close of the last bar, summed volume) and redraws instantly, no
+server round-trip. EMAs are resampled the same way (sampled at each
+higher-timeframe bar's close), and trade markers/tooltips group same-bucket
+fills so a 1D candle with 30 trades inside it shows one arrow labelled `×30`
+instead of 30 overlapping ones. Selecting a trade snaps the view to whichever
+timeframe is active. See "Why this matters for backtesting" above for how
+data holes are handled during resampling.
 
 ## Notes
 
