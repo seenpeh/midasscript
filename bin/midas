@@ -1,0 +1,119 @@
+#!/usr/bin/env bash
+#
+# midas — open the MidasScript backtest viewer.
+#
+# Starts serve.py and opens the chart in your default browser. The terminal
+# stays attached and streams the server log (that is where /api/run and
+# /api/optimize progress shows up); Ctrl-C stops the server.
+#
+# Installed as a symlink, usually ~/.local/bin/midas -> <repo>/bin/midas, so
+# editing this file in the repo takes effect immediately.
+
+set -euo pipefail
+
+# --- locate the repo, following however many symlinks point here ------------
+src="${BASH_SOURCE[0]}"
+while [ -L "$src" ]; do
+  dir="$(cd -P "$(dirname "$src")" && pwd)"
+  src="$(readlink "$src")"
+  case "$src" in
+    /*) ;;                 # already absolute
+    *) src="$dir/$src" ;;  # relative to the symlink's directory
+  esac
+done
+REPO="$(cd -P "$(dirname "$src")/.." && pwd)"
+
+PORT=8765
+OPEN=1
+ARGS=()
+
+usage() {
+  cat <<'USAGE'
+midas — open the MidasScript backtest viewer
+
+Usage:
+  midas [--port N] [--no-open] [extra serve.py args...]
+
+Starts the local viewer server and opens the chart in your browser. The
+terminal stays attached and shows the server log — press Ctrl-C to stop.
+
+If a server is already running on the port, midas just opens the browser
+at it instead of starting a second one.
+
+Options:
+  --port N      serve on port N (default 8765)
+  --no-open     start the server without opening a browser
+  -h, --help    show this help
+
+Any other arguments pass straight through to serve.py, e.g.:
+  midas --data 5m_candles.json
+USAGE
+}
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -h|--help)  usage; exit 0 ;;
+    --no-open)  OPEN=0; shift ;;
+    --port)     PORT="${2:?--port needs a value}"; ARGS+=(--port "$2"); shift 2 ;;
+    --port=*)   PORT="${1#*=}"; ARGS+=("$1"); shift ;;
+    *)          ARGS+=("$1"); shift ;;
+  esac
+done
+
+URL="http://localhost:${PORT}/"
+
+# --- is something already listening there? ---------------------------------
+port_open() {
+  python3 - "$PORT" <<'PY' 2>/dev/null
+import socket, sys
+s = socket.socket()
+s.settimeout(0.25)
+sys.exit(0 if s.connect_ex(("127.0.0.1", int(sys.argv[1]))) == 0 else 1)
+PY
+}
+
+open_browser() {
+  if command -v open >/dev/null 2>&1; then open "$URL"
+  elif command -v xdg-open >/dev/null 2>&1; then xdg-open "$URL"
+  else echo "  (open $URL in your browser)"; fi
+}
+
+if port_open; then
+  if [ "$OPEN" = 1 ]; then
+    echo "MidasScript is already running on port ${PORT} — opening ${URL}"
+    open_browser
+  else
+    echo "MidasScript is already running on ${URL}"
+  fi
+  exit 0
+fi
+
+# --- preflight: the viewer is useless without converted candles -------------
+cd "$REPO"
+if [ ! -f serve.py ]; then
+  echo "midas: serve.py not found in ${REPO}" >&2
+  exit 1
+fi
+if [ ! -f 5m_candles.json ]; then
+  echo "midas: 5m_candles.json not found in ${REPO}" >&2
+  echo "       Put your 5-minute CSV at data.csv (or ~/XAU_5m_data.csv) and run:" >&2
+  echo "         python3 convert_csv.py" >&2
+  exit 1
+fi
+
+# --- open the browser once the server is actually accepting connections -----
+# Backgrounded so the server itself can hold the foreground and stream its log.
+if [ "$OPEN" = 1 ]; then
+  (
+    for _ in $(seq 1 120); do          # up to ~30s; loading candles takes a moment
+      if port_open; then open_browser; exit 0; fi
+      sleep 0.25
+    done
+    echo "midas: server did not come up in time — open ${URL} manually" >&2
+  ) &
+  WAITER=$!
+  trap 'kill "$WAITER" 2>/dev/null || true' EXIT INT TERM
+fi
+
+echo "Starting MidasScript viewer in ${REPO} (Ctrl-C to stop)"
+python3 serve.py ${ARGS[@]+"${ARGS[@]}"}

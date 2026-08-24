@@ -15,6 +15,7 @@ strategy ("Ultimate script v0.3.7"), with a browser chart viewer.
 | `index.html` | TradingView-style viewer (lightweight-charts) |
 | `convert_csv.py` | `data.csv` → cleaned, gap-checked `5m_candles.json` |
 | `timeframes.py` | Gap detection + 5m → 15m/1h/4h/1D resampling, shared by the backtester and the browser chart |
+| `bin/midas` | `midas` terminal command — starts the server and opens the viewer |
 
 ## Data
 
@@ -63,6 +64,28 @@ The chart marks each hole with an orange "no data" marker on every timeframe
 therefore the backtest — goes quiet.
 
 ## Usage
+
+The quickest way in — from any directory, `midas` starts the server and opens
+the chart in your browser:
+
+```bash
+midas
+```
+
+The terminal stays attached and streams the server log (that is where
+`/api/run` and `/api/optimize` progress appears); press Ctrl-C to stop. If a
+server is already listening on the port, `midas` just opens the browser at it
+instead of starting a second one. Options: `--port N`, `--no-open`, `--help`;
+anything else is passed straight through to `serve.py`.
+
+**Install it** (one time — `~/.local/bin` is already on `PATH`):
+
+```bash
+ln -sfn "$PWD/bin/midas" ~/.local/bin/midas
+```
+
+It's a symlink, so edits to `bin/midas` in the repo take effect immediately.
+Or run the server directly:
 
 ```bash
 python3 serve.py   # http://localhost:8765/
