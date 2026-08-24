@@ -20,6 +20,12 @@ Execution model (matches the Pine script's intent):
     - a price that GAPS through a level at the open fills at the open
     - strategy.close_all (trend-change / time-exit) closes at that bar's close
     - position size = equity * risk% / |close - stop|, equity includes floating PnL
+    - DATA HOLES (stretches where the feed has no bars at all, e.g. 2025-09-12
+      -> 2025-10-15) are not tradable: every open position is closed on the last
+      bar before the hole ("DataGap") and no new entry is taken until the
+      indicators have re-warmed on the far side. Without this the engine happily
+      "holds" through a month of missing prices and books the 14.7% reopening
+      jump as a real fill.
 
 Usage:
     python3 backtest.py [--capital 10000] [--data 5m_candles.json]
@@ -37,6 +43,7 @@ from datetime import datetime, timezone
 import numpy as np
 
 import strategy as S
+import timeframes as TF
 
 
 # ---------------------------------------------------------------------------
@@ -70,7 +77,7 @@ def ts_str(epoch: int) -> str:
 # ---------------------------------------------------------------------------
 # Data loading
 # ---------------------------------------------------------------------------
-def load_candles(path: str):
+def load_candles(path: str, hole_hours: float = TF.HOLE_HOURS):
     t0 = _time.time()
     print(f"Loading {path} ...", flush=True)
     with open(path) as f:
@@ -80,7 +87,24 @@ def load_candles(path: str):
     o, h, l, c, v = arr[:, 1], arr[:, 2], arr[:, 3], arr[:, 4], arr[:, 5]
     print(f"  {len(epoch):,} candles loaded in {_time.time()-t0:.1f}s "
           f"({ts_str(epoch[0])} -> {ts_str(epoch[-1])})", flush=True)
-    return epoch, o, h, l, c, v
+
+    # A backtest is only as honest as its time axis. Refuse to run on a series
+    # that is out of order or has duplicate bars, and report the data holes.
+    if not (np.diff(epoch) > 0).all():
+        raise SystemExit(
+            f"{path}: timestamps are not strictly increasing (duplicate or "
+            f"out-of-order bars). Re-run `python3 convert_csv.py`, which sorts "
+            f"and de-duplicates the source CSV.")
+    holes = doc.get("holes")
+    if holes is None or hole_hours != TF.HOLE_HOURS:
+        holes, _ = TF.find_breaks(epoch, hole_hours)
+    if holes:
+        print(f"  {len(holes)} data hole(s) in this series — trading is "
+              f"suspended across them:", flush=True)
+        for x in holes:
+            print(f"      {ts_str(x['start'])} -> {ts_str(x['end'])}  "
+                  f"({x['hours']/24:.2f} days)", flush=True)
+    return epoch, o, h, l, c, v, holes
 
 
 # ---------------------------------------------------------------------------
@@ -88,7 +112,8 @@ def load_candles(path: str):
 # ---------------------------------------------------------------------------
 def run(epoch, o, h, l, c, v, params: S.Params, capital: float,
         print_every: int = 1, quiet: bool = False, ruin_floor: float = 0.01,
-        start_ts: int | None = None, end_ts: int | None = None, log: bool = True):
+        start_ts: int | None = None, end_ts: int | None = None, log: bool = True,
+        holes=None, gap_flat: bool = True, gap_warmup: int = 0):
     """
     Run the backtest. If start_ts/end_ts are given (epoch seconds), the trading
     window is restricted to that range — but signals (and therefore EMAs) are
@@ -96,6 +121,11 @@ def run(epoch, o, h, l, c, v, params: S.Params, capital: float,
 
     log=False suppresses ALL framing output (used by the optimizer for fast,
     silent evaluation); quiet=True only suppresses per-trade/per-year lines.
+
+    `holes` is the list of data holes from load_candles(). With gap_flat=True
+    (the default) every open position is closed at the CLOSE OF THE LAST BAR
+    BEFORE a hole, and entries are blocked for `gap_warmup` bars afterwards --
+    the only honest way to treat a stretch of prices the backtest never saw.
     """
     def _p(*a, **k):
         if log: print(*a, **k)
@@ -115,6 +145,23 @@ def run(epoch, o, h, l, c, v, params: S.Params, capital: float,
     if i_start > 0 or i_end < n:
         _p(f"  trading window: bar {i_start:,} -> {i_end-1:,}  "
            f"({ts_str(epoch[i_start])} -> {ts_str(epoch[i_end-1])})", flush=True)
+
+    # Bars that sit on the far side of a data hole. `flat_before[i]` -> the
+    # hole starts after bar i, so bar i is the last tradable bar of the run;
+    # `no_entry[i]` -> bar i is still inside the post-hole warmup.
+    holes = holes or []
+    flat_before = np.zeros(n, dtype=bool)
+    no_entry = np.zeros(n, dtype=bool)
+    if gap_flat and holes:
+        for x in holes:
+            i = int(x["i"])
+            if 0 <= i < n:
+                flat_before[i] = True
+            j = i + 1
+            if gap_warmup > 0 and j < n:
+                no_entry[j:min(n, j + gap_warmup)] = True
+        _p(f"  data holes: {len(holes)} — positions are flattened before each, "
+           f"entries blocked for {gap_warmup} bars after", flush=True)
 
     trade_signal = sig["trade_signal"]
     direction = sig["direction"]
@@ -160,7 +207,8 @@ def run(epoch, o, h, l, c, v, params: S.Params, capital: float,
         side = "LONG" if p["dir"] == 1 else "SHORT"
         tag = {"SL": C.red("SL"), "TP": C.green("TP"),
                "TrendChange": C.yellow("TREND"), "TimeExit": C.yellow("TIME"),
-               "EndOfData": C.grey("EOD")}[ex_reason]
+               "EndOfData": C.grey("EOD"),
+               "DataGap": C.yellow("GAP")}[ex_reason]
         pnl_s = C.green(f"+{pnl:,.2f}") if pnl >= 0 else C.red(f"{pnl:,.2f}")
         return (f"{C.grey(ts_str(p['exit_time']))}    ✖ exit {side} @ {ex_price:.2f}  "
                 f"{tag}  PnL {pnl_s}  eq={eq:,.2f}")
@@ -269,6 +317,14 @@ def run(epoch, o, h, l, c, v, params: S.Params, capital: float,
                 close_position(p, ti, i, ci, "TimeExit")
             positions = []
 
+        # 3b) data hole starts after this bar -> flatten. The next bar is days
+        # or weeks away with no prices in between; carrying a position (and its
+        # stop) across that void would book a fill nobody could have got.
+        if positions and flat_before[i]:
+            for p in positions:
+                close_position(p, ti, i, ci, "DataGap")
+            positions = []
+
         # 4) live equity (initial + realized + floating open PnL)
         open_profit = 0.0
         for p in positions:
@@ -304,7 +360,9 @@ def run(epoch, o, h, l, c, v, params: S.Params, capital: float,
         dll_block = params.dll_enable and dll_active
 
         # 6) entry (Sections 7 + 8) at this bar's close
-        if trade_signal[i] and not dll_block and len(positions) < params.pyramiding:
+        if (trade_signal[i] and not dll_block and not no_entry[i]
+                and not flat_before[i]
+                and len(positions) < params.pyramiding):
             sl = sl_arr[i]; tp = tp_arr[i]; d = int(direction[i])
             trade_risk = abs(ci - sl)
             if trade_risk > 0:
@@ -556,7 +614,8 @@ def write_results(path, stats, closed, equity_points, params, capital, epoch,
 
 
 def write_chart_slice(path, epoch, o, h, l, c, v, chart_days, closed,
-                      ema_fast=None, ema_slow=None, max_bars=250000):
+                      ema_fast=None, ema_slow=None, max_bars=250000,
+                      holes=None):
     """Export a candle window that actually contains the trades, so the chart
     has positions to draw. Window = [first entry, last exit] padded by ~1 day.
     If that span exceeds `chart_days`, keep the most recent `chart_days`. The
@@ -592,6 +651,14 @@ def write_chart_slice(path, epoch, o, h, l, c, v, chart_days, closed,
         "candles": rows,
         "ema_fast": ef,
         "ema_slow": eslo,
+        # Data holes inside the exported window, re-indexed to the slice. The
+        # viewer marks them and never lets a 15m/1h/4h/1D candle span one.
+        "holes": [{"i": int(x["i"]) - start, "start": int(x["start"]),
+                   "end": int(x["end"]), "hours": x["hours"]}
+                  for x in (holes or [])
+                  if start <= int(x["i"]) < stop - 1],
+        "timeframes": TF.TF_ORDER,
+        "base_seconds": TF.BASE_SECONDS,
     }
     with open(path, "w") as f:
         json.dump(doc, f, separators=(",", ":"))
@@ -615,12 +682,14 @@ def parse_dt(s):
 
 def run_once(epoch, o, h, l, c, v, *, capital, params, start_ts=None, end_ts=None,
              results_path="results.json", chart_path="5m_candles_chart.json",
-             chart_days=730.0, print_every=1, quiet=False, ruin_floor=0.01):
+             chart_days=730.0, print_every=1, quiet=False, ruin_floor=0.01,
+             holes=None, gap_flat=True, gap_warmup=0):
     """Reusable wrapper used by main() and by serve.py. Returns the stats dict."""
     closed, equity_points, initial, realized, ruin_info, i_start, i_end = run(
         epoch, o, h, l, c, v, params, capital,
         print_every=print_every, quiet=quiet, ruin_floor=ruin_floor,
-        start_ts=start_ts, end_ts=end_ts)
+        start_ts=start_ts, end_ts=end_ts,
+        holes=holes, gap_flat=gap_flat, gap_warmup=gap_warmup)
 
     stats = compute_stats(closed, equity_points, initial, realized, epoch, i_start, i_end)
     if ruin_info:
@@ -634,7 +703,7 @@ def run_once(epoch, o, h, l, c, v, *, capital, params, start_ts=None, end_ts=Non
     ema_fast = S.ema(c, params.ema_fast_len)
     ema_slow = S.ema(c, params.ema_slow_len)
     write_chart_slice(chart_path, epoch, o, h, l, c, v, chart_days, closed,
-                      ema_fast, ema_slow)
+                      ema_fast, ema_slow, holes=holes)
     return stats
 
 
@@ -665,14 +734,25 @@ def main():
                     help="entry-window start hour UTC (with --ny-session)")
     ap.add_argument("--session-end-hr", type=int, default=23,
                     help="entry-window end hour UTC, exclusive (with --ny-session)")
+    ap.add_argument("--no-gap-flat", action="store_true",
+                    help="do NOT flatten positions before a data hole "
+                         "(reproduces the old, unrealistic behaviour)")
+    ap.add_argument("--gap-warmup", type=int, default=0,
+                    help="bars after a data hole during which no new entry is "
+                         "taken (indicators are still stale from before it)")
+    ap.add_argument("--hole-hours", type=float, default=TF.HOLE_HOURS,
+                    help="a gap longer than this many hours is a DATA HOLE, "
+                         "not a market closure (default %(default)s)")
     args = ap.parse_args()
 
     params = S.Params(tz_offset_hours=args.tz_offset,
                       session_filter_enable=args.ny_session,
                       sess_start_hr=args.session_start_hr,
                       sess_end_hr=args.session_end_hr)
-    epoch, o, h, l, c, v = load_candles(args.data)
+    epoch, o, h, l, c, v, holes = load_candles(args.data, args.hole_hours)
     run_once(epoch, o, h, l, c, v,
+             holes=holes, gap_flat=not args.no_gap_flat,
+             gap_warmup=args.gap_warmup,
              capital=args.capital, params=params,
              start_ts=parse_dt(args.start), end_ts=parse_dt(args.end),
              results_path=args.results, chart_path=args.chart_out,

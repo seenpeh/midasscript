@@ -49,6 +49,8 @@
   #legend{position:absolute;top:6px;left:10px;z-index:4;font-size:12px;
     pointer-events:none;display:flex;gap:12px;flex-wrap:wrap}
   #legend span{color:var(--muted)} #legend b{color:var(--text)}
+  #legend .tf-chip{background:#1d2a42;color:#cfe0ff;border-radius:4px;
+    padding:0 5px;font-weight:600;font-size:10.5px;line-height:16px}
   #tradeTip{position:absolute;z-index:7;display:none;pointer-events:none;
     background:rgba(20,26,33,.97);border:1px solid #36414f;border-radius:8px;
     padding:9px 11px;min-width:210px;box-shadow:0 6px 18px rgba(0,0,0,.5);font-size:11.5px}
@@ -59,6 +61,14 @@
   #tradeTip .tt-row span{color:var(--muted)} #tradeTip .tt-row b{color:var(--text)}
   #tradeTip .tt-more{margin-top:6px;color:var(--muted);font-size:10px;font-style:italic}
   .toolbar{position:absolute;top:6px;right:10px;z-index:5;display:flex;gap:6px}
+  /* timeframe segmented control (chart toolbar) */
+  .toolbar #tfSeg{display:flex;margin-left:0;margin-right:4px;border:1px solid var(--border);
+    border-radius:6px;overflow:hidden;background:var(--panel2)}
+  .toolbar #tfSeg button{border:none;border-radius:0;padding:3px 9px;
+    background:transparent;color:var(--muted);font-weight:600;letter-spacing:.2px}
+  .toolbar #tfSeg button+button{border-left:1px solid var(--border)}
+  .toolbar #tfSeg button:hover{color:var(--text)}
+  .toolbar #tfSeg button.on{background:#1d2a42;color:#cfe0ff}
   .toolbar button{background:var(--panel2);border:1px solid var(--border);color:var(--text);
     border-radius:6px;padding:4px 9px;font-size:11px;cursor:pointer}
   .toolbar button:hover{border-color:var(--accent)}
@@ -104,7 +114,7 @@
   .tag.short{background:#311414;color:var(--redL)}
   .tag.sl{background:#311414;color:var(--redL)}
   .tag.tp{background:#103024;color:var(--greenL)}
-  .tag.trendchange,.tag.timeexit,.tag.endofdata{background:#2a2410;color:var(--orange)}
+  .tag.trendchange,.tag.timeexit,.tag.endofdata,.tag.datagap{background:#2a2410;color:var(--orange)}
   .stats{padding:12px}
   .stat-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px}
   .stat{background:var(--panel2);border:1px solid var(--border);border-radius:7px;padding:8px 10px}
@@ -238,6 +248,7 @@
       <div id="price">
         <div id="legend"></div>
         <div class="toolbar">
+          <span class="cmp-seg" id="tfSeg"></span>
           <button id="btnFit" class="on" title="Fit all candles">Fit all</button>
           <button id="btnAuto" title="Comfortable zoom on recent candles">Auto zoom</button>
           <button id="btnEma" class="on">EMAs</button>
@@ -469,10 +480,95 @@ const shortDt = s => s ? s.slice(2) : '';   // "04-06-11 08:10"
 let CANDLES=null, RESULTS=null, chart, eqChart, candleSeries, lineSeries,
     emaFastS, emaSlowS, eqSeries, priceLines=[], selectedId=null, markersOn=true,
     priceMode='ohlc', lineSmooth=3, minT=0, maxT=0;
+
+/* ---------- timeframes ----------
+   The file on disk is always 5-minute bars — that is the resolution the
+   strategy trades on and the resolution every trade in results.json refers to.
+   The higher timeframes are aggregated HERE, in the browser, from those same
+   bars, so switching timeframe changes only what you are looking at: it never
+   changes a single trade, fill or statistic.
+
+   Two rules keep the aggregation honest:
+     - buckets are aligned to the epoch (so a 4h bar starts at 00/04/08/... UTC,
+       not at whatever time the first bar of the window happens to be), and
+     - a bucket never spans a DATA HOLE. The bar after a hole opens a fresh
+       candle, so a 1D candle can't quietly weld 2025-09-12 onto 2025-10-15 and
+       report the 32 days in between as one $537 daily range.                   */
+const TF_SECONDS={'5m':300,'15m':900,'1h':3600,'4h':14400,'1D':86400};
+const TF_ORDER=['5m','15m','1h','4h','1D'];
+let TF='5m';
+let gapsOn=true;
+// the bars currently drawn: 5m straight from the file, or an aggregate of them
+let VIEW={tf:'5m',sec:300,candles:[],emaFast:[],emaSlow:[]};
 // candle-size-comparison pane state
 let cmpChart=null, cmpSeries=null, cmpOn=false, cmpMetric='body', cmpN=4;
 let syncLock=false;
 const AUTO_ZOOM_BARS=180;   // "decent" default zoom = this many recent candles
+
+/* bucket id per 5m bar: the epoch its higher-timeframe candle opens at.
+   `holeIdx` holds indices i where a data hole sits between bar i and i+1 — the
+   run starting at i+1 gets its own leading (partial) bucket. */
+function bucketIds(cs, sec, holeIdx){
+  const n=cs.length, b=new Array(n);
+  for(let i=0;i<n;i++) b[i]=Math.floor(cs[i][0]/sec)*sec;
+  for(const hi of holeIdx){
+    const i=hi+1; if(i<=0||i>=n) continue;
+    const bid=b[i]; let j=i;
+    while(j<n && b[j]===bid) j++;
+    for(let k=i;k<j;k++) b[k]=cs[i][0];   // partial bucket opens on this bar
+  }
+  return b;
+}
+
+/* aggregate the 5m file into `tf`. OHLC = first open / max high / min low /
+   last close; volume sums. Indicator lines are sampled at each bucket's CLOSE,
+   which is the value that candle actually closed on. */
+function buildView(tf){
+  const cs=(CANDLES&&CANDLES.candles)||[], sec=TF_SECONDS[tf]||300;
+  const ef=CANDLES.ema_fast||[], es=CANDLES.ema_slow||[];
+  if(sec<=300 || cs.length<2){
+    VIEW={tf,sec:300,candles:cs,emaFast:ef,emaSlow:es,starts:null};
+    return VIEW;
+  }
+  const holeIdx=(CANDLES.holes||[]).map(x=>x.i).filter(i=>i>=0&&i<cs.length-1);
+  const b=bucketIds(cs,sec,holeIdx);
+  const starts=[];
+  for(let i=0;i<cs.length;i++) if(i===0||b[i]!==b[i-1]) starts.push(i);
+  const out=new Array(starts.length),
+        oEf=ef.length?new Array(starts.length):[],
+        oEs=es.length?new Array(starts.length):[];
+  for(let k=0;k<starts.length;k++){
+    const s=starts[k], e=(k+1<starts.length?starts[k+1]:cs.length);
+    let hi=cs[s][2], lo=cs[s][3], vol=0;
+    for(let i=s;i<e;i++){
+      if(cs[i][2]>hi) hi=cs[i][2];
+      if(cs[i][3]<lo) lo=cs[i][3];
+      vol+=cs[i][5];
+    }
+    const t=b[s];
+    out[k]=[t, cs[s][1], hi, lo, cs[e-1][4], vol];
+    if(ef.length) oEf[k]=[t, ef[e-1][1]];
+    if(es.length) oEs[k]=[t, es[e-1][1]];
+  }
+  VIEW={tf,sec,candles:out,emaFast:oEf,emaSlow:oEs,starts};
+  return VIEW;
+}
+
+/* index of the drawn bar that CONTAINS time t (bars are contiguous in order,
+   so the last bar opening at or before t is the one) */
+function viewBarIndex(t){
+  const cs=VIEW.candles, n=cs.length;
+  if(!n || t<cs[0][0]) return -1;
+  let lo=0, hi=n-1;
+  while(lo<hi){ const m=(lo+hi+1)>>1; if(cs[m][0]<=t) lo=m; else hi=m-1; }
+  return lo;
+}
+/* bar-open time of the drawn candle containing t (null if outside the window) */
+function snapToBar(t){
+  const i=viewBarIndex(t);
+  if(i<0 || t>maxT) return null;
+  return VIEW.candles[i][0];
+}
 
 function commonChartOpts(){
   return {
@@ -517,7 +613,7 @@ async function boot(){
 /* ---------- header chips ---------- */
 function buildHeader(){
   const s=RESULTS.stats, m=RESULTS.meta;
-  $('#dateRange').textContent = `${m.data_start} → ${m.data_end} · 5m · ${fmtInt(m.bars)} bars`;
+  updateHeaderMeta();
   if(m.ruined){
     $('#ruinBadge').innerHTML = `<span class="badge-ruin">⚠ Account ruined ${m.ruin_date}</span>`;
   }
@@ -533,6 +629,18 @@ function buildHeader(){
     `<div class="chip"><span class="k">${k}</span><span class="v ${cl}">${v}</span></div>`).join('');
 }
 
+/* the small grey line under the title: window, drawn timeframe, bar count */
+function updateHeaderMeta(){
+  const m=RESULTS.meta;
+  const n=(VIEW.candles&&VIEW.candles.length)||m.bars;
+  const holes=(CANDLES&&CANDLES.holes)||[];
+  const gap = holes.length
+    ? ` · ⛔ ${holes.length} data hole${holes.length>1?'s':''}` : '';
+  $('#dateRange').textContent =
+    `${m.data_start} → ${m.data_end} · ${TF} · ${fmtInt(n)} bars` +
+    (TF==='5m' ? '' : ' (from 5m)') + gap;
+}
+
 /* ---------- charts ---------- */
 let tradeIndex=new Map();   // candle-time -> {entries:[...], exits:[...]}
 function buildCharts(){
@@ -544,6 +652,9 @@ function buildCharts(){
   $('#price').innerHTML='<div id="legend"></div>'+
     '<div id="tradeTip"></div>'+
     '<div class="toolbar">'+
+    '<span class="cmp-seg" id="tfSeg" title="Chart timeframe — aggregated from the same 5m bars; trades always execute on 5m">'+
+      TF_ORDER.map(k=>'<button data-tf="'+k+'" class="'+(k===TF?'on':'')+'">'+k+'</button>').join('')+
+    '</span>'+
     '<button id="btnFit" class="on">Fit all</button>'+
     '<button id="btnAuto">Auto zoom</button>'+
     '<button id="btnLine" title="Switch between candles and a smooth price line">Line</button>'+
@@ -552,7 +663,8 @@ function buildCharts(){
       '<b id="smoothVal">'+lineSmooth+'</b></span>'+
     '<button id="btnEma" class="on">EMAs</button>'+
     '<button id="btnMarks" class="on">Markers</button>'+
-    '<button id="btnCmp">Size cmp</button></div>';
+    '<button id="btnCmp">Size cmp</button>'+
+    '<button id="btnGaps" class="'+(gapsOn?'on':'')+'" title="Mark stretches where the feed has no bars at all">Gaps</button></div>';
   $('#equity').innerHTML='<div class="pane-label">Equity curve</div>';
 
   // mouse wheel zooms centered on the cursor (handleScale.mouseWheel),
@@ -575,12 +687,13 @@ function buildCharts(){
   emaSlowS = chart.addLineSeries({color:'#f0a020',lineWidth:1,priceLineVisible:false,
     lastValueVisible:false,crosshairMarkerVisible:false});
 
-  const cs = CANDLES.candles;
+  buildView(TF);
+  const cs = VIEW.candles;
   minT=cs[0][0]; maxT=cs[cs.length-1][0];
   candleSeries.setData(cs.map(r=>({time:r[0],open:r[1],high:r[2],low:r[3],close:r[4]})));
   lineSeries.setData(buildLineData());
-  emaFastS.setData(CANDLES.ema_fast.map(r=>({time:r[0],value:r[1]})));
-  emaSlowS.setData(CANDLES.ema_slow.map(r=>({time:r[0],value:r[1]})));
+  emaFastS.setData(VIEW.emaFast.map(r=>({time:r[0],value:r[1]})));
+  emaSlowS.setData(VIEW.emaSlow.map(r=>({time:r[0],value:r[1]})));
 
   buildTradeIndex();
   buildMarkers();
@@ -607,8 +720,37 @@ function buildCharts(){
   $('#smoothWrap') && ($('#smoothWrap').style.display = priceMode==='line'?'inline-flex':'none');
   lineSeries.applyOptions({lineType: lineSmooth===0
     ? LightweightCharts.LineType.Simple : LightweightCharts.LineType.Curved});
+  updateHeaderMeta();
   // fit after layout settles so autoSize resize doesn't leave us zoomed to the tail
   requestAnimationFrame(()=>fitAll());
+}
+
+/* Switch the drawn timeframe. Re-aggregates from the same 5m file and rebuilds
+   every derived series; nothing about the backtest is re-run, because nothing
+   about the backtest depends on what you are looking at. The visible time range
+   is preserved so the switch feels like a zoom, not a jump. */
+function setTimeframe(tf){
+  if(!TF_SECONDS[tf] || tf===TF) return;
+  const keep = chart ? chart.timeScale().getVisibleRange() : null;
+  TF=tf;
+  buildView(TF);
+  const cs=VIEW.candles;
+  minT=cs[0][0]; maxT=cs[cs.length-1][0];
+  candleSeries.setData(cs.map(r=>({time:r[0],open:r[1],high:r[2],low:r[3],close:r[4]})));
+  lineSeries.setData(buildLineData());
+  emaFastS.setData(VIEW.emaFast.map(r=>({time:r[0],value:r[1]})));
+  emaSlowS.setData(VIEW.emaSlow.map(r=>({time:r[0],value:r[1]})));
+  buildTradeIndex();
+  buildMarkers();
+  eqSeries.setData(buildEquityData());
+  if(cmpOn && cmpSeries) cmpSeries.setData(computeSizeRatios());
+  document.querySelectorAll('#tfSeg button').forEach(b=>
+    b.classList.toggle('on', b.dataset.tf===TF));
+  updateHeaderMeta();
+  if(keep){
+    try{ chart.timeScale().setVisibleRange(keep); }catch(e){ fitAll(); }
+  }
+  if(selectedId!=null){ const id=selectedId; selectedId=null; selectTrade(id); }
 }
 
 function fitAll(){
@@ -621,7 +763,7 @@ function fitAll(){
 
 /* "decent" auto zoom: a comfortable fixed window over the most recent candles */
 function autoZoom(){
-  const n=CANDLES.candles.length;
+  const n=VIEW.candles.length;
   const from=Math.max(-2, n-1-AUTO_ZOOM_BARS), to=n-1+6;
   chart.timeScale().setVisibleLogicalRange({from, to});  // sync propagates to others
   $('#btnAuto') && $('#btnAuto').classList.add('on');
@@ -637,7 +779,7 @@ function trueRange(cs){
   return out;
 }
 function computeSizeRatios(){
-  const cs=CANDLES.candles;
+  const cs=VIEW.candles;
   const metric = cmpMetric==='tr' ? trueRange(cs) : cs.map(r=>Math.abs(r[4]-r[1]));
   const out=[];
   for(let i=0;i<cs.length;i++){
@@ -685,7 +827,7 @@ function refreshSizeCmp(){
 
 // forward-fill realized equity onto every candle timestamp
 function buildEquityData(){
-  const ec=RESULTS.equity_curve, cs=CANDLES.candles;
+  const ec=RESULTS.equity_curve, cs=VIEW.candles;
   const out=[]; let j=0, cur=RESULTS.stats.initial_capital;
   for(const r of cs){
     const t=r[0];
@@ -695,12 +837,16 @@ function buildEquityData(){
   return out;
 }
 
+/* Trades always happen on 5m bars. On a higher timeframe several of them fall
+   inside one drawn candle, so they are indexed by the candle that CONTAINS the
+   fill — the tooltip then lists everything that happened inside that bar. */
 function buildTradeIndex(){
   tradeIndex=new Map();
   const add=(t,kind,tr)=>{
-    if(t<minT||t>maxT) return;
-    if(!tradeIndex.has(t)) tradeIndex.set(t,{entries:[],exits:[]});
-    tradeIndex.get(t)[kind].push(tr);
+    const bt=snapToBar(t);
+    if(bt===null) return;
+    if(!tradeIndex.has(bt)) tradeIndex.set(bt,{entries:[],exits:[]});
+    tradeIndex.get(bt)[kind].push(tr);
   };
   for(const tr of RESULTS.trades){ add(tr.entry_time,'entries',tr); add(tr.exit_time,'exits',tr); }
 }
@@ -723,7 +869,7 @@ function sgWeights(m){                       // quadratic SG smoothing weights, 
   _sgCache[m]=w; return w;
 }
 function buildLineData(){
-  const cs=CANDLES.candles, n=cs.length;
+  const cs=VIEW.candles, n=cs.length;
   const lvl=Math.max(0, Math.min(LINE_SMOOTH_MAX, lineSmooth|0));
   if(lvl<=0 || n<5) return cs.map(r=>({time:r[0],value:r[4]}));
   const half=lvl*2;
@@ -743,15 +889,14 @@ function priceSeries(){ return priceMode==='line' ? lineSeries : candleSeries; }
 
 /* nearest candle row to a (possibly interpolated) crosshair time, within ~1 bar */
 function nearestBar(t){
-  const cs=CANDLES.candles, n=cs.length;
+  const cs=VIEW.candles, n=cs.length;
   if(!n) return null;
   let lo=0, hi=n-1;
   while(lo<hi){ const mid=(lo+hi)>>1; if(cs[mid][0]<t) lo=mid+1; else hi=mid; }
   let best=lo;
   if(lo>0 && Math.abs(cs[lo-1][0]-t) <= Math.abs(cs[lo][0]-t)) best=lo-1;
   const bar=cs[best];
-  const tol=n>1 ? (cs[1][0]-cs[0][0]) : 300;   // one bar interval
-  if(Math.abs(bar[0]-t) > tol) return null;
+  if(Math.abs(bar[0]-t) > VIEW.sec) return null;   // more than one bar away
   return {row:bar, time:bar[0]};
 }
 
@@ -780,19 +925,50 @@ function buildMarkers(){
   // clear markers from whichever series isn't active, then draw on the active one
   const active=priceSeries(), other=active===candleSeries?lineSeries:candleSeries;
   if(other) other.setMarkers([]);
-  if(!markersOn){active.setMarkers([]);return;}
   const mk=[];
-  for(const t of RESULTS.trades){
-    if(t.entry_time<minT||t.entry_time>maxT) continue;
-    const long=t.direction==='long';
-    mk.push({time:t.entry_time,position:long?'belowBar':'aboveBar',
-      color:long?'#2ebd85':'#e0533d',shape:long?'arrowUp':'arrowDown',
-      text:(long?'L':'S')+'#'+t.id});
-    if(t.exit_time>=minT&&t.exit_time<=maxT){
-      mk.push({time:t.exit_time,position:long?'aboveBar':'belowBar',
-        color:t.pnl>=0?'#2ebd85':'#e0533d',shape:'circle'});
+
+  if(markersOn){
+    // One arrow per (bar, direction): on 1D a single candle can hold dozens of
+    // 5m entries, and stacking dozens of arrows on it just hides the price.
+    // The count says how many, the tooltip lists them.
+    const byBar=new Map();
+    for(const t of RESULTS.trades){
+      const bt=snapToBar(t.entry_time);
+      if(bt===null) continue;
+      const key=bt+'|'+t.direction;
+      const g=byBar.get(key);
+      if(g){ g.n++; } else { byBar.set(key,{t:bt,dir:t.direction,id:t.id,n:1}); }
+    }
+    for(const g of byBar.values()){
+      const long=g.dir==='long';
+      mk.push({time:g.t,position:long?'belowBar':'aboveBar',
+        color:long?'#2ebd85':'#e0533d',shape:long?'arrowUp':'arrowDown',
+        text:(long?'L':'S')+(g.n>1?('×'+g.n):('#'+g.id))});
+    }
+    // exits: one dot per bar, coloured by the net PnL of what closed there
+    const exitBar=new Map();
+    for(const t of RESULTS.trades){
+      const bt=snapToBar(t.exit_time);
+      if(bt===null) continue;
+      exitBar.set(bt,(exitBar.get(bt)||0)+t.pnl);
+    }
+    for(const [t,pnl] of exitBar){
+      mk.push({time:t,position:'aboveBar',
+        color:pnl>=0?'#2ebd85':'#e0533d',shape:'circle'});
     }
   }
+
+  // data holes: mark the last bar before each one, on every timeframe
+  if(gapsOn){
+    for(const g of (CANDLES.holes||[])){
+      const bt=snapToBar(g.start);
+      if(bt===null) continue;
+      const days=g.hours/24;
+      mk.push({time:bt,position:'aboveBar',color:'#f0a020',shape:'square',
+        text:'⛔ '+(days>=1?days.toFixed(1)+'d':g.hours.toFixed(1)+'h')+' no data'});
+    }
+  }
+
   mk.sort((a,b)=>a.time-b.time);
   active.setMarkers(mk);
 }
@@ -825,10 +1001,11 @@ function setupCrosshair(){
     const dt=new Date(bt*1000).toISOString().slice(0,16).replace('T',' ');
     const o=r[1],hi=r[2],lo=r[3],cl=r[4];
     if(priceMode==='line'){
-      leg.innerHTML=`<span><b>${dt}</b></span><span>Close<b style="color:#cfd6df">${fmt(cl)}</b></span>`+base;
+      leg.innerHTML=`<span><b>${dt}</b></span><span class="tf-chip">${TF}</span>`+
+        `<span>Close<b style="color:#cfd6df">${fmt(cl)}</b></span>`+base;
     }else{
       const col=cl>=o?'#2ebd85':'#e0533d';
-      leg.innerHTML=`<span><b>${dt}</b></span>`+
+      leg.innerHTML=`<span><b>${dt}</b></span><span class="tf-chip">${TF}</span>`+
         `<span>O<b style="color:${col}">${fmt(o)}</b></span>`+
         `<span>H<b style="color:${col}">${fmt(hi)}</b></span>`+
         `<span>L<b style="color:${col}">${fmt(lo)}</b></span>`+
@@ -913,10 +1090,15 @@ function selectTrade(id){
   add(t.entry_price,'#cfd6df','entry');
   add(t.sl,'#e0533d','SL');
   add(t.tp,'#2ebd85','TP');
-  // zoom to the trade if it's inside the loaded window
+  // Zoom to the trade if it's inside the loaded window. The range is set in
+  // BAR indices, not timestamps: the time scale is index-based (it closes the
+  // weekend and holiday gaps), so a timestamp range does not map to the span
+  // you expect — and a 5-minute trade asked for in seconds is invisible once
+  // the chart is on 1D.
   if(t.entry_time>=minT&&t.entry_time<=maxT){
-    const span=Math.max(t.exit_time-t.entry_time, 60*60); // >=1h
-    chart.timeScale().setVisibleRange({from:t.entry_time-span*4-3600, to:t.exit_time+span*4+3600});
+    const a=viewBarIndex(t.entry_time), b=Math.max(a, viewBarIndex(t.exit_time));
+    const pad=Math.max(12, Math.round((b-a)*2));
+    chart.timeScale().setVisibleLogicalRange({from:a-pad, to:b+pad});
     $('#btnFit').classList.remove('on');
   }else{
     toast('Trade #'+id+' is outside the exported chart window');
@@ -984,6 +1166,13 @@ function buildStats(){
 
 /* ---------- wiring ---------- */
 function wire(){
+  document.querySelectorAll('#tfSeg button').forEach(b=>{
+    b.onclick=()=>setTimeframe(b.dataset.tf);
+  });
+  $('#btnGaps') && ($('#btnGaps').onclick=e=>{
+    gapsOn=!e.target.classList.contains('on');
+    e.target.classList.toggle('on',gapsOn); buildMarkers();
+  });
   $('#btnFit').onclick=()=>fitAll();
   $('#btnAuto').onclick=()=>autoZoom();
   $('#btnLine').onclick=()=>setPriceMode(priceMode==='line'?'ohlc':'line');
