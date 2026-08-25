@@ -9,29 +9,14 @@ passes the null listener and pays nothing.
 
 from __future__ import annotations
 
-from typing import Protocol, runtime_checkable
-
-
-@runtime_checkable
-class RunObserver(Protocol):
-    """Every hook is optional in spirit — `NullObserver` supplies the no-ops."""
-
-    def signals_started(self) -> None: ...
-    def signals_ready(self, entry_count: int, seconds: float) -> None: ...
-    def window_selected(self, first: int, last: int, start_ts: int, end_ts: int) -> None: ...
-    def gap_policy(self, hole_count: int, warmup_bars: int) -> None: ...
-    def run_started(self, capital: float, bars: int) -> None: ...
-    def year_started(self, timestamp: int, open_positions: int,
-                     closed_trades: int, equity: float) -> None: ...
-    def position_opened(self, position) -> None: ...
-    def position_closed(self, trade) -> None: ...
-    def account_ruined(self, timestamp: int, trades: int, equity: float,
-                       floor_fraction: float) -> None: ...
-    def run_finished(self, seconds: float, trades: int, equity: float) -> None: ...
-
 
 class NullObserver:
-    """Silence. The default, so nothing in the engine depends on a terminal."""
+    """Silence. The default, so nothing in the engine depends on a terminal.
+
+    Any object with this same set of no-argument-return methods can stand in
+    as an observer (`ConsoleObserver` is the other one) — duck typing, so
+    there is no base class to inherit from.
+    """
 
     def signals_started(self): pass
     def signals_ready(self, entry_count, seconds): pass
