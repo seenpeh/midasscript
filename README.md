@@ -3,19 +3,40 @@
 Python port, backtester, and walk-forward optimizer for a Pine Script trading
 strategy ("Ultimate script v0.3.7"), with a browser chart viewer.
 
-## Files
+## Project layout
 
-| File | Purpose |
+Entry points at the root stay exactly as they were — `python3 backtest.py`,
+`optimize.py`, `serve.py`, `convert_csv.py`, `timeframes.py` — but each is now a
+few lines that call into the `midas` package. Every layer depends only on the
+ones above it, so you can read (or replace) one without the rest.
+
+| Path | Purpose |
 | --- | --- |
-| `MidasScript.pine` | Original Pine Script strategy |
-| `strategy.py` | Vectorized Python port of the signal logic |
-| `backtest.py` | Event-driven backtest engine + CLI |
-| `optimize.py` | Walk-forward optimization (Optuna) |
-| `serve.py` | Static server + `/api/run`, `/api/optimize/*` |
-| `index.html` | TradingView-style viewer (lightweight-charts) |
-| `convert_csv.py` | `data.csv` → cleaned, gap-checked `5m_candles.json` |
-| `timeframes.py` | Gap detection + 5m → 15m/1h/4h/1D resampling, shared by the backtester and the browser chart |
+| `midas/util/` | timestamps, point-series thinning — no project knowledge |
+| `midas/config/params.py` | the `Params` dataclass and the one place untrusted input is coerced into it |
+| `midas/data/` | the time axis: `CandleSeries`, gap detection + resampling, CSV import |
+| `midas/signals/` | price → entry signals: indicators, the three triggers, the generator |
+| `midas/engine/` | signals + money → trades: positions, broker fills, gaps, the run loop, statistics |
+| `midas/reporting/` | trades/stats → terminal output (`ConsoleObserver`) and JSON artefacts |
+| `midas/optimizer/` | search space, objective, walk-forward folds |
+| `midas/server/` | HTTP transport: routing, static files, background jobs |
+| `midas/app/` | the use cases both the CLI and the server call |
+| `midas/cli/` | argument parsing for each entry point |
+| `assets/js/`, `assets/css/` | the viewer, split the same way (data / chart / panels) |
+| `tests/` | unit tests for the rules — no data file required |
+| `MidasScript.pine` | original Pine Script strategy |
+| `index.html` | viewer markup (lightweight-charts) |
 | `bin/midas` | `midas` terminal command — starts the server and opens the viewer |
+
+Two rules hold the shape together: **nothing below `midas/reporting/` prints**
+(the engine reports events to an observer, so the optimizer runs silently and
+for free), and **nothing below `midas/server/` knows an HTTP request exists**.
+
+### Tests
+
+```bash
+python3 -m unittest discover tests
+```
 
 ## Data
 
@@ -49,7 +70,7 @@ logic would fire on the reopening bar as if the intervening 32 days of price
 action had simply not existed — turning a 14.7% overnight-equivalent jump into
 a single unrealistic fill. Two changes fix this:
 
-1. **`backtest.py` flattens every open position at the close of the last bar
+1. **The engine flattens every open position at the close of the last bar
    before a hole** (exit reason `DataGap`) and blocks new entries for
    `--gap-warmup` bars after one, instead of carrying positions through a void
    the feed never recorded. Disable with `--no-gap-flat` to reproduce the old
