@@ -24,6 +24,7 @@ ones above it, so you can read (or replace) one without the rest.
 | `midas/cli/` | argument parsing for each entry point |
 | `assets/js/`, `assets/css/` | the viewer, split the same way (data / chart / panels) |
 | `tests/` | unit tests for the rules — no data file required |
+| `docs/` | Persian architecture document (`ARCHITECTURE.fa.md`) + print-ready HTML build |
 | `MidasScript.pine` | original Pine Script strategy |
 | `index.html` | viewer markup (lightweight-charts) |
 | `bin/midas` | `midas` terminal command — starts the server and opens the viewer |
@@ -37,6 +38,20 @@ for free), and **nothing below `midas/server/` knows an HTTP request exists**.
 ```bash
 python3 -m unittest discover tests
 ```
+
+### Architecture document
+
+A full architectural review and technical reference (in Persian, with English
+terms alongside) lives in [`docs/ARCHITECTURE.fa.md`](docs/ARCHITECTURE.fa.md).
+To produce a print-ready RTL page you can save as PDF:
+
+```bash
+./docs/build-pdf.sh
+```
+
+That renders the Markdown through pandoc with `docs/_pdf-style.html`; open the
+resulting `docs/ARCHITECTURE.fa.html` in a browser and print to PDF. The
+Markdown stays the single source of truth — the HTML is generated, never edited.
 
 ## Data
 

@@ -8,3 +8,6 @@ data.csv
 5m_candles_chart.json
 results.json
 opt_results.json
+
+# Generated from docs/ARCHITECTURE.fa.md by docs/build-pdf.sh
+docs/ARCHITECTURE.fa.html
