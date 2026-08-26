@@ -4,8 +4,8 @@
    inside one drawn candle, so they are indexed by the candle that CONTAINS the
    fill and the tooltip lists everything that happened inside that bar. */
 
-import {snapToBar} from './timeframes.js';
-import {COLORS} from './theme.js';
+import {snapToBar} from '../chart/timeframes.js';
+import {COLORS} from '../chart/theme.js';
 
 /** Map of candle-time -> {entries: [...], exits: [...]}. */
 export function buildTradeIndex(view, trades) {

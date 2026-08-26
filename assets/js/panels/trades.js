@@ -5,6 +5,24 @@ import {emit, on, EVENTS} from '../core/bus.js';
 import {fmt, shortDt, signClass} from '../core/format.js';
 import {store} from '../data/store.js';
 
+/* Exit reasons, shortened to what fits a rail-width column. The full word is
+   still on the chart tooltip. */
+const REASON_LABEL = {
+  TrendChange: 'TREND', TimeExit: 'TIME', EndOfData: 'EOD', DataGap: 'GAP',
+};
+
+/* Nearly every trade closes on its entry day (mean hold is a few 5m bars), so
+   repeating the whole date in the exit column buys nothing and costs a
+   column's width. Show the time alone on a same-day exit, and month-day plus
+   time when the trade crossed midnight — the year is already in the entry. */
+const exitCell = trade => {
+  const entry = String(trade.entry_dt || ''), exit = String(trade.exit_dt || '');
+  if (!exit) return '';
+  return exit.slice(0, 10) === entry.slice(0, 10)
+    ? exit.slice(11, 16)
+    : `<span class="muted">${exit.slice(5, 10)}</span> ${exit.slice(11, 16)}`;
+};
+
 const FILTERS = {
   all: () => true,
   long: t => t.direction === 'long',
@@ -77,13 +95,14 @@ export class TradeTable {
       <td>${trade.id}</td>
       <td class="l"><span class="tag ${long ? 'long' : 'short'}">${long ? 'LONG' : 'SHORT'}</span></td>
       <td class="l">${shortDt(trade.entry_dt)}</td>
-      <td>${fmt(trade.entry_price)}</td>
-      <td class="l">${shortDt(trade.exit_dt)}</td>
-      <td>${fmt(trade.exit_price)}</td>
-      <td><span class="tag ${trade.exit_reason.toLowerCase()}">${trade.exit_reason}</span></td>
-      <td>${trade.bars_held}</td>
+      <td class="col-px">${fmt(trade.entry_price)}</td>
+      <td class="l">${exitCell(trade)}</td>
+      <td class="col-px">${fmt(trade.exit_price)}</td>
+      <td><span class="tag ${trade.exit_reason.toLowerCase()}">${
+        REASON_LABEL[trade.exit_reason] || trade.exit_reason}</span></td>
+      <td class="col-opt">${trade.bars_held}</td>
       <td class="${signClass(trade.pnl)}">${(trade.pnl >= 0 ? '+' : '') + fmt(trade.pnl)}</td>
-      <td>${fmt(trade.equity_after)}</td>
+      <td class="col-opt">${fmt(trade.equity_after)}</td>
     </tr>`;
   }
 }

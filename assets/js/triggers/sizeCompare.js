@@ -3,7 +3,7 @@
    test, drawn so you can see where a "big candle" actually is. */
 
 import {$} from '../core/dom.js';
-import {baseChartOptions, linkTimeScales, COLORS} from './theme.js';
+import {baseChartOptions, linkTimeScales, COLORS} from '../chart/theme.js';
 
 export const BIG_CANDLE_RATIO = 2;
 
