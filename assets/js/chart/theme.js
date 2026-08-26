@@ -7,6 +7,7 @@ export const COLORS = {
   up: '#2ebd85', down: '#e0533d', line: '#cfd6df',
   emaFast: '#3b82f6', emaSlow: '#f0a020',
   equity: '#4c8dff', neutral: '#5a6472', dim: '#39414d', mid: '#6b8cae',
+  trendFast: '#c084fc', trendSlow: '#22d3ee',
   hole: '#f0a020',
 };
 

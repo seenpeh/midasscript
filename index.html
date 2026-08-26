@@ -10,30 +10,39 @@
 <body>
 <div id="app">
   <header>
-    <h1>MidasScript <small id="dateRange"></small></h1>
-    <span id="ruinBadge"></span>
-    <div class="chips" id="chips"></div>
-    <button id="btnMonthly" class="edit-btn monthly" title="Monthly profit &amp; drawdown">
-      📅 Monthly
-    </button>
-    <button id="btnOpt" class="edit-btn optimize" title="Walk-forward optimisation">
-      🧪 Optimize
-    </button>
-    <button id="btnEdit" class="edit-btn" title="Edit parameters and re-run">
-      ⚙ Edit &amp; Run
-    </button>
+    <div class="brand">
+      <h1>MidasScript</h1>
+      <small id="dateRange"></small>
+    </div>
+    <div class="metrics">
+      <div class="chips" id="chips"></div>
+    </div>
+    <div class="actions">
+      <button id="btnMonthly" class="btn" title="Monthly profit &amp; drawdown">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg><span>Monthly</span>
+      </button>
+      <button id="btnOpt" class="btn" title="Walk-forward optimisation">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3"/><path d="M12 1v3M12 20v3M1 12h3M20 12h3"/></svg><span>Optimize</span>
+      </button>
+      <button id="btnEdit" class="btn btn--primary" title="Edit parameters and re-run">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg><span>Edit &amp; Run</span>
+      </button>
+    </div>
   </header>
+  <div id="ruinBadge" class="alertbar"></div>
   <main>
     <div class="left">
       <div id="price">
-        <div id="legend"></div>
-        <div class="toolbar">
-          <span class="cmp-seg" id="tfSeg"></span>
-          <button id="btnFit" class="on" title="Fit all candles">Fit all</button>
-          <button id="btnAuto" title="Comfortable zoom on recent candles">Auto zoom</button>
-          <button id="btnEma" class="on">EMAs</button>
-          <button id="btnMarks" class="on">Markers</button>
-          <button id="btnCmp" title="Candle size comparison">Size cmp</button>
+        <div class="pane-chrome">
+          <div id="legend"></div>
+          <div class="toolbar">
+            <span class="cmp-seg" id="tfSeg"></span>
+            <button id="btnFit" class="on" title="Fit all candles">Fit all</button>
+            <button id="btnAuto" title="Comfortable zoom on recent candles">Auto zoom</button>
+            <button id="btnEma" class="on">EMAs</button>
+            <button id="btnMarks" class="on">Markers</button>
+            <button id="btnCmp" title="Candle size comparison">Size cmp</button>
+          </div>
         </div>
       </div>
       <div id="sizecmp">
@@ -50,6 +59,24 @@
         <div id="cmpChartHost"></div>
       </div>
       <div id="equity"><div class="pane-label">Equity curve</div></div>
+      <div id="trend">
+        <div id="trendBar">
+          <span class="pane-tag">Fuzzy trend</span>
+          <button id="trendFast" class="on" title="Trend measured on 5m bars">5m</button>
+          <button id="trendSlow" class="on" title="Trend measured on 1h bars">1h</button>
+          <span class="cmp-ctrl" title="Smoothing level of the line whose slope is measured">
+            smooth
+            <input type="range" id="trendLevel" min="0" max="10" step="1" value="7">
+            <b id="trendLevelVal">7</b>
+          </span>
+          <span class="cmp-ctrl" title="Slope sensitivity: how many ATR per bar counts as fully trending">
+            gain
+            <input type="range" id="trendGain" min="0.5" max="20" step="0.5" value="5">
+            <b id="trendGainVal">5.0</b>
+          </span>
+        </div>
+        <div id="trendChartHost"></div>
+      </div>
     </div>
     <aside>
       <div class="tabs">
@@ -68,8 +95,8 @@
         <table id="tradeTable">
           <thead><tr>
             <th>#</th><th class="l">Dir</th><th class="l">Entry</th>
-            <th>Price</th><th>Exit</th><th>Px</th><th>Why</th>
-            <th>Bars</th><th>PnL</th><th>Equity</th>
+            <th class="col-px">Price</th><th class="l">Exit</th><th class="col-px">Px</th><th>Why</th>
+            <th class="col-opt">Bars</th><th>PnL</th><th class="col-opt">Equity</th>
           </tr></thead>
           <tbody></tbody>
         </table>
@@ -84,12 +111,12 @@
 <div id="scrim"></div>
 <aside id="drawer" aria-hidden="true">
   <header><h2>Edit parameters &amp; re-run</h2>
-    <button id="btnClose" class="icon-btn">✕</button>
+    <button id="btnClose" class="icon-btn" aria-label="Close"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
   </header>
   <div class="body">
     <h3>Date range</h3>
-    <div class="field"><label>Start (UTC)</label><input type="text" id="f_start" placeholder="YYYY-MM-DD or YYYY-MM-DD HH:MM"></div>
-    <div class="field"><label>End (UTC)</label><input type="text" id="f_end" placeholder="YYYY-MM-DD or YYYY-MM-DD HH:MM"></div>
+    <div class="field field--text"><label>Start (UTC)</label><input type="text" id="f_start" placeholder="YYYY-MM-DD [HH:MM]"></div>
+    <div class="field field--text"><label>End (UTC)</label><input type="text" id="f_end" placeholder="YYYY-MM-DD [HH:MM]"></div>
     <div class="field"><label>Capital</label><input type="number" id="f_capital" step="100"></div>
     <div class="field"><label>Chart days (slice)</label><input type="number" id="f_chart_days" step="30"></div>
     <div class="hint">Empty start/end = full dataset.</div>
@@ -159,15 +186,15 @@
     <p class="opt-note tight" id="spreadHint">Each fill is moved half a spread against the trade (round-turn = one full spread).</p>
   </div>
   <footer>
-    <button id="btnDefaults" type="button" title="Reset all strategy params to the code defaults">↺ Defaults</button>
+    <button id="btnDefaults" type="button" title="Reset all strategy params to the code defaults"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 5v6h6"/><path d="M3.5 11a8.5 8.5 0 1 1 2 8"/></svg>Defaults</button>
     <button id="btnReset" type="button">Reset to last run</button>
-    <button id="btnApply" type="button">▶ Apply &amp; Run</button>
+    <button id="btnApply" type="button"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5.5v13l11-6.5z"/></svg>Apply &amp; Run</button>
   </footer>
 </aside>
 
 <aside id="optDrawer" aria-hidden="true">
-  <header><h2>🧪 Walk-forward optimisation</h2>
-    <button id="optClose" class="icon-btn">✕</button>
+  <header><h2>Walk-forward optimisation</h2>
+    <button id="optClose" class="icon-btn" aria-label="Close"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
   </header>
   <div class="body">
     <p class="opt-note">Optimises only on data from <b>Base start</b> onward (past ignored).
@@ -204,8 +231,8 @@
       All are maximised under the max-drawdown cap below.</p>
 
     <h3>Walk-forward setup</h3>
-    <div class="field"><label>Base start (UTC)</label><input type="text" id="o_base" value="2024-01-01"></div>
-    <div class="field"><label>Base end (UTC)</label><input type="text" id="o_base_end" placeholder="empty = no end (data end)"></div>
+    <div class="field field--text"><label>Base start (UTC)</label><input type="text" id="o_base" value="2024-01-01"></div>
+    <div class="field field--text"><label>Base end (UTC)</label><input type="text" id="o_base_end" placeholder="empty = data end"></div>
     <div class="field"><label>Capital</label><input type="number" id="o_capital" value="10000" step="100"></div>
     <div class="field"><label>Max drawdown cap %</label><input type="number" id="o_maxdd" value="30" step="1"></div>
     <div class="field"><label>Parts (n)</label><input type="number" id="o_parts" value="5" min="2" step="1"></div>
@@ -223,7 +250,7 @@
   </div>
   <footer>
     <button id="optEstimateBtn" type="button">Estimate time</button>
-    <button id="optRunBtn" type="button">▶ Run optimization</button>
+    <button id="optRunBtn" type="button"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5.5v13l11-6.5z"/></svg>Run optimization</button>
   </footer>
 </aside>
 
@@ -234,7 +261,7 @@
   <div class="mm-box">
     <div class="mm-head">
       <h2>Monthly profit &amp; drawdown</h2>
-      <button id="mmClose">✕</button>
+      <button id="mmClose" class="icon-btn" aria-label="Close"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
     </div>
     <div class="mm-body" id="mmBody"></div>
   </div>

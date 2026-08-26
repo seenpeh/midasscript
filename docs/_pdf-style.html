@@ -1,0 +1,120 @@
+<!-- Print/RTL stylesheet injected into the generated HTML by pandoc.
+     See docs/build-pdf.sh. Kept separate so the Markdown stays the single
+     source of truth for the content and this file owns only presentation. -->
+<style>
+  :root {
+    --ink: #1a1d23;
+    --muted: #5b6472;
+    --rule: #d8dee6;
+    --code-bg: #f6f8fa;
+    --code-ink: #24292f;
+    --accent: #1f4e79;
+    --quote-bg: #f4f7fb;
+  }
+
+  html { -webkit-text-size-adjust: 100%; }
+
+  body {
+    font-family: "Vazirmatn", "IRANSans", "Tahoma", "Geeza Pro", "Segoe UI",
+                 system-ui, sans-serif;
+    direction: rtl;
+    text-align: right;
+    color: var(--ink);
+    background: #fff;
+    font-size: 11.5pt;
+    line-height: 2;
+    max-width: 60em;
+    margin: 0 auto;
+    padding: 2.5em 2em 4em;
+  }
+
+  /* --- headings --------------------------------------------------------- */
+  h1, h2, h3, h4 { line-height: 1.6; font-weight: 700; color: var(--accent); }
+  h1 {
+    font-size: 21pt;
+    border-bottom: 3px solid var(--accent);
+    padding-bottom: .4em;
+    margin-bottom: 1em;
+  }
+  h2 {
+    font-size: 16pt;
+    margin-top: 2.2em;
+    border-bottom: 1px solid var(--rule);
+    padding-bottom: .3em;
+  }
+  h3 { font-size: 13pt; margin-top: 1.8em; }
+  h4 { font-size: 11.5pt; margin-top: 1.4em; color: var(--ink); }
+
+  /* --- body ------------------------------------------------------------- */
+  p { margin: .8em 0; text-align: justify; }
+  ul, ol { padding-right: 1.6em; padding-left: 0; }
+  li { margin: .35em 0; }
+  a { color: var(--accent); text-decoration: none; }
+  hr { border: none; border-top: 1px solid var(--rule); margin: 2.2em 0; }
+
+  blockquote {
+    border-right: 4px solid var(--accent);
+    border-left: none;
+    background: var(--quote-bg);
+    margin: 1.2em 0;
+    padding: .7em 1.1em;
+    color: var(--muted);
+  }
+  blockquote p { margin: .3em 0; }
+  blockquote strong { color: var(--ink); }
+
+  /* --- code: always LTR ------------------------------------------------- */
+  code, pre, kbd, samp {
+    font-family: "SF Mono", "Menlo", "Consolas", "Courier New", monospace;
+    direction: ltr;
+    unicode-bidi: embed;
+  }
+  code {
+    background: var(--code-bg);
+    color: var(--code-ink);
+    padding: .12em .4em;
+    border-radius: 4px;
+    font-size: .87em;
+    display: inline-block;
+  }
+  pre {
+    background: var(--code-bg);
+    border: 1px solid var(--rule);
+    border-radius: 6px;
+    padding: 1em 1.2em;
+    overflow-x: auto;
+    text-align: left;
+    line-height: 1.55;
+    font-size: 9.5pt;
+  }
+  pre code { background: none; padding: 0; font-size: inherit; display: block; }
+
+  /* --- tables ----------------------------------------------------------- */
+  table {
+    border-collapse: collapse;
+    width: 100%;
+    margin: 1.2em 0;
+    font-size: 10.5pt;
+  }
+  th, td {
+    border: 1px solid var(--rule);
+    padding: .5em .7em;
+    text-align: right;
+    vertical-align: top;
+  }
+  th { background: var(--code-bg); font-weight: 700; }
+  tr:nth-child(even) td { background: #fafbfc; }
+  td code { font-size: .85em; }
+
+  /* --- print ------------------------------------------------------------ */
+  @page { margin: 18mm 15mm; }
+
+  @media print {
+    body { padding: 0; max-width: none; font-size: 10.5pt; }
+    a { color: var(--ink); }
+    h1, h2, h3, h4 { break-after: avoid; page-break-after: avoid; }
+    pre, table, blockquote { break-inside: avoid; page-break-inside: avoid; }
+    tr { break-inside: avoid; page-break-inside: avoid; }
+    h2 { break-before: auto; }
+  }
+</style>

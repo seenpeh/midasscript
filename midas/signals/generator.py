@@ -1,8 +1,12 @@
 """Turn prices into entry signals — a faithful port of "Ultimate script v0.3.7".
 
-This module is *pure signal generation*. It takes a `CandleSeries` and the
-strategy parameters and returns, for every bar, everything the backtester needs
-to decide what to do. It knows nothing about money, position size or equity:
+This module is *orchestration*: it asks `midas.signals.trend` which directions
+the market allows, asks `midas.signals.triggers` which bars fire an entry, and
+then does the stop/target/calendar arithmetic that joins the two. The detection
+itself lives in those two packages, one folder each.
+
+It takes a `CandleSeries` and the strategy parameters and returns, for every
+bar, everything the backtester needs to decide what to do. It knows nothing about money, position size or equity:
 position sizing and the daily-loss-limit state machine depend on live equity
 (including floating PnL) and therefore live in `midas.engine`.
 
@@ -18,8 +22,9 @@ from dataclasses import dataclass
 import numpy as np
 
 from . import indicators as ind
-from .triggers import (BarFeatures, REASON_NONE, TriggerContext,
-                       big_candle_masks, triggers_from_params)
+from .trend import EmaRegime
+from .triggers import (REASON_NONE, TriggerContext, bar_features,
+                       baseline_masks, triggers_from_params)
 
 
 @dataclass(frozen=True)
@@ -49,13 +54,11 @@ class SignalSet:
 
 
 def compute_signals(series, params) -> SignalSet:
-    bars = _bar_features(series)
-    ema_fast = ind.ema(bars.close, params.ema_fast_len)
-    ema_slow = ind.ema(bars.close, params.ema_slow_len)
-    long_allowed = ema_fast > ema_slow
-    short_allowed = ema_fast < ema_slow
+    bars = bar_features(series)
+    regime = EmaRegime.compute(bars.close, params)
+    ema_fast, ema_slow = regime.fast, regime.slow
 
-    context = _trigger_context(bars, params, long_allowed, short_allowed)
+    context = _trigger_context(bars, params, regime)
     entries = _consolidate(triggers_from_params(params), context)
 
     stop_loss = _apply_dynamic_stop(bars.close, entries, params)
@@ -77,7 +80,7 @@ def compute_signals(series, params) -> SignalSet:
         risk_reward=risk_reward,
         risk_pct=entries.risk_pct,
         reason=entries.reason,
-        trend_changed=_trend_changed(long_allowed, short_allowed) & params.trend_close_enable,
+        trend_changed=regime.changed() & params.trend_close_enable,
         is_close_time=calendar["close_time"],
         is_reset_time=calendar["reset_time"],
         ema_fast=ema_fast,
@@ -88,22 +91,11 @@ def compute_signals(series, params) -> SignalSet:
 # ---------------------------------------------------------------------------
 # Steps
 # ---------------------------------------------------------------------------
-def _bar_features(series) -> BarFeatures:
-    return BarFeatures(
-        open=series.open, high=series.high, low=series.low, close=series.close,
-        body=np.abs(series.close - series.open),
-        true_range=ind.true_range(series.high, series.low, series.close),
-    )
-
-
-def _trigger_context(bars, params, long_allowed, short_allowed) -> TriggerContext:
-    # Trigger 1's big-candle masks are shared inputs to T2 and T3 (see
-    # TriggerContext), so they are computed here rather than inside T1 — and
-    # deliberately regardless of whether T1 itself is enabled.
-    baseline_bull, baseline_bear, _ = big_candle_masks(
-        bars, params.t1_n, params.t1_tr_mult, params.t1_m)
-    return TriggerContext(bars=bars, long_allowed=long_allowed,
-                          short_allowed=short_allowed,
+def _trigger_context(bars, params, regime) -> TriggerContext:
+    baseline_bull, baseline_bear = baseline_masks(bars, params)
+    return TriggerContext(bars=bars,
+                          long_allowed=regime.long_allowed,
+                          short_allowed=regime.short_allowed,
                           baseline_bull=baseline_bull, baseline_bear=baseline_bear)
 
 
@@ -175,13 +167,6 @@ def _targets(close, ema_fast, entries, stop_loss):
                            close + distance * risk_reward,
                            close - distance * risk_reward)
     return risk_reward, take_profit
-
-
-def _trend_changed(long_allowed, short_allowed) -> np.ndarray:
-    """Section 1.5 — the EMA relationship flipped on this bar."""
-    current = np.where(long_allowed, 1, np.where(short_allowed, -1, 0)).astype(np.int8)
-    previous = ind.shift(current, 1, 0)
-    return (current != previous) & (previous != 0)
 
 
 def _calendar(epoch, params) -> dict:

@@ -7,17 +7,20 @@ export const LEGEND_KEYS =
   `<span>EMA fast <b style="color:${COLORS.emaFast}">━</b></span>` +
   `<span>EMA slow <b style="color:${COLORS.emaSlow}">━</b></span>`;
 
-export function legendHTML(row, timeframe, priceMode) {
+/* `shown` says which price series are drawn ({ohlc, line}): candles get the
+   full bar readout, the bare line gets its close. */
+export function legendHTML(row, timeframe, shown) {
   const [time, open, high, low, close] = row;
-  const head = `<span><b>${utcMinute(time)}</b></span>` +
-               `<span class="tf-chip">${timeframe}</span>`;
-  if (priceMode === 'line') {
-    return head + `<span>Close<b style="color:${COLORS.line}">${fmt(close)}</b></span>`
-         + LEGEND_KEYS;
-  }
   const color = close >= open ? COLORS.up : COLORS.down;
   const cell = (label, value) => `<span>${label}<b style="color:${color}">${fmt(value)}</b></span>`;
-  return head + cell('O', open) + cell('H', high) + cell('L', low) + cell('C', close);
+  const out = `<span><b>${utcMinute(time)}</b></span>` +
+              `<span class="tf-chip">${timeframe}</span>`;
+  // with candles on, C already reads out the close the line draws
+  if (shown.ohlc) {
+    return out + cell('O', open) + cell('H', high) + cell('L', low) + cell('C', close);
+  }
+  return out + `<span>Close<b style="color:${COLORS.line}">${fmt(close)}</b></span>`
+       + LEGEND_KEYS;
 }
 
 const row = (key, value, cls = '') =>
