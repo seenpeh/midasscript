@@ -2,12 +2,5 @@
 __pycache__/
 *.pyc
 
-# Large generated/market data (not tracked)
-data.csv
-5m_candles.json
-5m_candles_chart.json
-results.json
-opt_results.json
-
 # Generated from docs/ARCHITECTURE.fa.md by docs/build-pdf.sh
 docs/ARCHITECTURE.fa.html
