@@ -195,6 +195,12 @@ main>aside{flex:0 0 var(--rail);width:var(--rail);background:var(--panel);
 .tb-smooth button{background:none;border:1px solid var(--border);border-radius:5px;
   color:var(--muted);padding:1px 6px;font:inherit;cursor:pointer}
 .tb-smooth button.on{color:var(--accentText);border-color:var(--accent)}
+.tb-filters{display:inline-flex;gap:4px}
+/* the dot carries the line colour, so a ticked filter is findable on the chart */
+.tb-filters button::before{content:'';display:inline-block;width:6px;height:6px;
+  border-radius:50%;background:var(--dot);margin-right:4px;opacity:.35}
+.tb-filters button.on{color:var(--text);border-color:var(--dot)}
+.tb-filters button.on::before{opacity:1}
 /* wide enough for '10' so dragging the slider cannot reflow the row */
 .tb-smooth b{color:var(--accentText);min-width:20px;text-align:center;font-variant-numeric:tabular-nums}
 

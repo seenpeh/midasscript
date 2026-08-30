@@ -20,8 +20,7 @@ import {TrendPane} from '../trend/trendPane.js';
 const AUTO_ZOOM_BARS = 180;    // a comfortable default zoom: this many recent bars
 
 const FILTER_LABELS = {sg: 'SG', sma: 'SMA', ema: 'EMA'};
-const FILTER_OPTIONS = FILTERS.map(
-  kind => `<option value="${kind}">${FILTER_LABELS[kind]}</option>`).join('');
+const FILTER_COLORS = {sg: COLORS.filterSg, sma: COLORS.filterSma, ema: COLORS.filterEma};
 
 export class ChartView {
   constructor() {
@@ -31,7 +30,8 @@ export class ChartView {
     this.smoothLevel = 3;             // preset mode: window is level*2 each side
     this.smoothCustom = {back: 5, fwd: 5};   // custom mode: bars behind/ahead
     this.smoothIsCustom = false;
-    this.smoothKind = DEFAULT_FILTER;        // 'sg' | 'sma' | 'ema'
+    // any mix of 'sg' | 'sma' | 'ema' — each ticked filter draws its own line
+    this.smoothKinds = new Set([DEFAULT_FILTER]);
     this.showTrades = true;
     this.showHoles = true;
     this.showEquity = true;
@@ -51,7 +51,9 @@ export class ChartView {
   /* Markers and a trade's price lines live on one series. Candles own them
      whenever they are drawn; the line only takes over when candles are off. */
   get activeSeries() {
-    return this.showOhlc ? this.series.candles : this.series.line;
+    if (this.showOhlc) return this.series.candles;
+    const kind = FILTERS.find(k => this.smoothKinds.has(k)) || DEFAULT_FILTER;
+    return this.series.lines[kind];
   }
 
   // -- building ----------------------------------------------------------
@@ -135,7 +137,7 @@ export class ChartView {
     this.showOhlc = next.showOhlc;
     this.showLine = next.showLine;
     this.series.candles.applyOptions({visible: this.showOhlc});
-    this.series.line.applyOptions({visible: this.showLine});
+    this._applyLineVisibility();
     this._syncPriceModeControls();
     this._drawMarkers();               // re-anchor markers on the visible series
     this._reselect();
@@ -161,24 +163,39 @@ export class ChartView {
     this._applySmoothing();
   }
 
-  /** Which filter shape runs over the window. */
-  setSmoothKind(kind) {
-    this.smoothKind = FILTERS.includes(kind) ? kind : DEFAULT_FILTER;
+  /** Tick a filter on or off. They overlay, so any mix is fine — but the last
+      ticked one cannot be turned off, or the line mode would draw nothing. */
+  setSmoothKind(kind, on) {
+    if (!FILTERS.includes(kind)) return;
+    if (!on && this.smoothKinds.size === 1 && this.smoothKinds.has(kind)) return;
+    if (on) this.smoothKinds.add(kind); else this.smoothKinds.delete(kind);
     this._applySmoothing();
+    this._drawMarkers();          // markers may have to move to another line
   }
 
-  /** What the smoothing functions take: the filter plus its window, which is
-      either the preset level's symmetric span or the typed one. */
-  _smoothSetting() {
+  /** What the smoothing functions take for `kind`: that filter plus the window,
+      which is either the preset level's symmetric span or the typed one. */
+  _smoothSetting(kind) {
     const span = this.smoothLevel * 2;
     const window_ = this.smoothIsCustom ? this.smoothCustom : {back: span, fwd: span};
-    return {kind: this.smoothKind, ...window_};
+    return {kind, ...window_};
   }
 
   _applySmoothing() {
     this._applyLineType();
-    this.series.line.setData(smoothCloses(this.view.candles, this._smoothSetting()));
+    for (const kind of FILTERS) {
+      this.series.lines[kind].setData(this.smoothKinds.has(kind)
+        ? smoothCloses(this.view.candles, this._smoothSetting(kind)) : []);
+    }
+    this._applyLineVisibility();
     this._syncSmoothControls();
+  }
+
+  _applyLineVisibility() {
+    for (const kind of FILTERS) {
+      this.series.lines[kind].applyOptions(
+        {visible: this.showLine && this.smoothKinds.has(kind)});
+    }
   }
 
   setShowTrades(on) { this.showTrades = on; this._drawMarkers(); }
@@ -286,8 +303,14 @@ export class ChartView {
       '</div>' +
       // its own line under the buttons: appearing here shifts nothing sideways
       '<span class="tb-smooth" id="smoothWrap">' +
-        '<select id="lineFilter" title="Which filter shapes the line">' +
-          FILTER_OPTIONS + '</select>' +
+        '<span class="tb-filters" title="Filters to draw — tick as many as you ' +
+          'want to compare them on the same window">' +
+          FILTERS.map(kind =>
+            `<button id="lineFilter-${kind}" data-kind="${kind}" ` +
+            `style="--dot:${FILTER_COLORS[kind]}" ` +
+            `class="${this.smoothKinds.has(kind) ? 'on' : ''}">` +
+            `${FILTER_LABELS[kind]}</button>`).join('') +
+        '</span>' +
         '<span id="smoothPreset" title="Line smoothness — swipe to adjust ' +
           '(0 = raw, 10 = smoothest)">' +
           `<input id="lineSmooth" type="range" min="0" max="${MAX_LEVEL}" step="1" ` +
@@ -312,11 +335,14 @@ export class ChartView {
       wickUpColor: COLORS.up, wickDownColor: COLORS.down,
       visible: this.showOhlc});
     this.series.candles.priceScale().applyOptions({scaleMargins: {top: 0.08, bottom: 0.12}});
-    this.series.line = chart.addLineSeries({
-      color: COLORS.line, lineWidth: 2, priceLineVisible: false,
-      lastValueVisible: false, crosshairMarkerVisible: true,
-      lineType: LightweightCharts.LineType.Curved,
-      visible: this.showLine});
+    this.series.lines = {};
+    for (const kind of FILTERS) {
+      this.series.lines[kind] = chart.addLineSeries({
+        color: FILTER_COLORS[kind], lineWidth: 2, priceLineVisible: false,
+        lastValueVisible: false, crosshairMarkerVisible: true,
+        lineType: LightweightCharts.LineType.Curved,
+        visible: this.showLine && this.smoothKinds.has(kind)});
+    }
     this.series.emaFast = chart.addLineSeries({color: COLORS.emaFast, lineWidth: 1,
       priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false});
     this.series.emaSlow = chart.addLineSeries({color: COLORS.emaSlow, lineWidth: 1,
@@ -344,7 +370,10 @@ export class ChartView {
     const bars = this.view.candles;
     this.series.candles.setData(bars.map(
       r => ({time: r[0], open: r[1], high: r[2], low: r[3], close: r[4]})));
-    this.series.line.setData(smoothCloses(bars, this._smoothSetting()));
+    for (const kind of FILTERS) {
+      this.series.lines[kind].setData(this.smoothKinds.has(kind)
+        ? smoothCloses(bars, this._smoothSetting(kind)) : []);
+    }
     this.series.emaFast.setData(this.view.emaFast.map(r => ({time: r[0], value: r[1]})));
     this.series.emaSlow.setData(this.view.emaSlow.map(r => ({time: r[0], value: r[1]})));
   }
@@ -356,8 +385,9 @@ export class ChartView {
 
   _drawMarkers() {
     const active = this.activeSeries;
-    const other = active === this.series.candles ? this.series.line : this.series.candles;
-    if (other) other.setMarkers([]);
+    for (const series of [this.series.candles, ...Object.values(this.series.lines)]) {
+      if (series && series !== active) series.setMarkers([]);
+    }
     active.setMarkers(buildMarkers(this.view, {
       trades: store.trades, holes: store.holes,
       showTrades: this.showTrades, showHoles: this.showHoles}));
@@ -397,9 +427,10 @@ export class ChartView {
   _applyLineType() {
     // straight segments when the window is empty (raw closes); let the renderer
     // curve the rest a touch
-    const {back, fwd} = smoothWindow(this._smoothSetting());
-    this.series.line.applyOptions({lineType: back + fwd === 0
-      ? LightweightCharts.LineType.Simple : LightweightCharts.LineType.Curved});
+    const {back, fwd} = smoothWindow(this._smoothSetting(DEFAULT_FILTER));
+    const lineType = back + fwd === 0
+      ? LightweightCharts.LineType.Simple : LightweightCharts.LineType.Curved;
+    for (const kind of FILTERS) this.series.lines[kind].applyOptions({lineType});
   }
 
   /** Mirror the smoothing state into its controls. */
@@ -412,7 +443,9 @@ export class ChartView {
     $('#smoothVal').textContent = this.smoothLevel;
     $('#smoothBack').value = this.smoothCustom.back;
     $('#smoothFwd').value = this.smoothCustom.fwd;
-    $('#lineFilter').value = this.smoothKind;
+    for (const kind of FILTERS) {
+      $('#lineFilter-' + kind).classList.toggle('on', this.smoothKinds.has(kind));
+    }
   }
 
   _syncPriceModeControls() {
@@ -445,7 +478,10 @@ export class ChartView {
     $('#btnOhlc').onclick = () => this.setPriceSeries('ohlc', !this.showOhlc);
     $('#btnLine').onclick = () => this.setPriceSeries('line', !this.showLine);
     $('#lineSmooth').oninput = event => this.setSmoothLevel(+event.target.value);
-    $('#lineFilter').onchange = event => this.setSmoothKind(event.target.value);
+    for (const kind of FILTERS) {
+      $('#lineFilter-' + kind).onclick = event =>
+        this.setSmoothKind(kind, !event.currentTarget.classList.contains('on'));
+    }
     $('#btnSmoothCustom').onclick = () => this.setSmoothCustom(!this.smoothIsCustom);
     const onWindowInput = () =>
       this.setSmoothWindow(+$('#smoothBack').value, +$('#smoothFwd').value);
