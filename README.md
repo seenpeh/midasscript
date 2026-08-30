@@ -55,9 +55,10 @@ Markdown stays the single source of truth — the HTML is generated, never edite
 
 ## Data
 
-Not tracked (too large). Supply `data.csv` (or `~/XAU_5m_data.csv`) as
-semicolon-separated `Date;Open;High;Low;Close;Volume` with dates like
-`2004.06.11 07:15`, then run:
+`data.csv` is tracked in the repo (semicolon-separated
+`Date;Open;High;Low;Close;Volume`, dates like `2004.06.11 07:15`). To
+regenerate the derived JSONs from it (or after swapping in your own CSV, e.g.
+`~/XAU_5m_data.csv`), run:
 
 ```bash
 python3 convert_csv.py
