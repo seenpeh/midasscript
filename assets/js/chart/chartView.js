@@ -9,7 +9,7 @@ import {$, $$, toast} from '../core/dom.js';
 import {emit, EVENTS} from '../core/bus.js';
 import {store} from '../data/store.js';
 import {TF_ORDER, buildView, barIndexAt, nearestBar} from './timeframes.js';
-import {MAX_LEVEL, smoothCloses} from '../trend/smoothing.js';
+import {MAX_BARS, MAX_LEVEL, smoothCloses, smoothWindow} from '../trend/smoothing.js';
 import {baseChartOptions, linkTimeScales, COLORS} from './theme.js';
 import {buildMarkers, buildTradeIndex} from '../triggers/markers.js';
 import {legendHTML, LEGEND_KEYS, tradeTooltipHTML} from './tooltip.js';
@@ -23,7 +23,9 @@ export class ChartView {
     this.timeframe = '5m';
     this.showOhlc = true;           // the two price series are independent:
     this.showLine = false;          // either, both, or (never) neither
-    this.smoothLevel = 3;
+    this.smoothLevel = 3;             // preset mode: window is level*2 each side
+    this.smoothCustom = {back: 5, fwd: 5};   // custom mode: bars behind/ahead
+    this.smoothIsCustom = false;
     this.showTrades = true;
     this.showHoles = true;
     this.showEquity = true;
@@ -135,10 +137,33 @@ export class ChartView {
 
   setSmoothLevel(level) {
     this.smoothLevel = Math.max(0, Math.min(MAX_LEVEL, level | 0));
+    this._applySmoothing();
+  }
+
+  /** Switch between the 0..10 presets and the typed {back, fwd} window. */
+  setSmoothCustom(on) {
+    this.smoothIsCustom = !!on;
+    this._applySmoothing();
+  }
+
+  /** Custom window: `back` bars behind the current bar, `fwd` bars ahead. */
+  setSmoothWindow(back, fwd) {
+    this.smoothCustom = {
+      back: Math.max(0, Math.min(MAX_BARS, Math.round(back) || 0)),
+      fwd: Math.max(0, Math.min(MAX_BARS, Math.round(fwd) || 0)),
+    };
+    this._applySmoothing();
+  }
+
+  /** What the smoothing functions take: a level, or a custom window. */
+  _smoothSetting() {
+    return this.smoothIsCustom ? this.smoothCustom : this.smoothLevel;
+  }
+
+  _applySmoothing() {
     this._applyLineType();
-    this.series.line.setData(smoothCloses(this.view.candles, this.smoothLevel));
-    $('#lineSmooth').value = this.smoothLevel;
-    $('#smoothVal').textContent = this.smoothLevel;
+    this.series.line.setData(smoothCloses(this.view.candles, this._smoothSetting()));
+    this._syncSmoothControls();
   }
 
   setShowTrades(on) { this.showTrades = on; this._drawMarkers(); }
@@ -245,10 +270,21 @@ export class ChartView {
         'title="Show the fuzzy trend pane (0 = down, 0.5 = sideways, 1 = up)">Trend</button>' +
       '</div>' +
       // its own line under the buttons: appearing here shifts nothing sideways
-      '<span class="tb-smooth" id="smoothWrap" title="Line smoothness — swipe to ' +
-        'adjust (0 = raw, 10 = smoothest)">' +
-        `<input id="lineSmooth" type="range" min="0" max="${MAX_LEVEL}" step="1" ` +
-        `value="${this.smoothLevel}"><b id="smoothVal">${this.smoothLevel}</b></span>` +
+      '<span class="tb-smooth" id="smoothWrap">' +
+        '<span id="smoothPreset" title="Line smoothness — swipe to adjust ' +
+          '(0 = raw, 10 = smoothest)">' +
+          `<input id="lineSmooth" type="range" min="0" max="${MAX_LEVEL}" step="1" ` +
+          `value="${this.smoothLevel}"><b id="smoothVal">${this.smoothLevel}</b></span>` +
+        '<span id="smoothWindow" title="Custom window: bars fitted behind and ' +
+          'ahead of each bar. 0 ahead = causal, no repainting.">' +
+          `back<input id="smoothBack" type="number" min="0" max="${MAX_BARS}" step="1" ` +
+          `value="${this.smoothCustom.back}">` +
+          `fwd<input id="smoothFwd" type="number" min="0" max="${MAX_BARS}" step="1" ` +
+          `value="${this.smoothCustom.fwd}">` +
+        '</span>' +
+        '<button id="btnSmoothCustom" title="Type an exact window instead of ' +
+          'using the preset levels">m·n</button>' +
+      '</span>' +
       '</div></div>';
   }
 
@@ -291,7 +327,7 @@ export class ChartView {
     const bars = this.view.candles;
     this.series.candles.setData(bars.map(
       r => ({time: r[0], open: r[1], high: r[2], low: r[3], close: r[4]})));
-    this.series.line.setData(smoothCloses(bars, this.smoothLevel));
+    this.series.line.setData(smoothCloses(bars, this._smoothSetting()));
     this.series.emaFast.setData(this.view.emaFast.map(r => ({time: r[0], value: r[1]})));
     this.series.emaSlow.setData(this.view.emaSlow.map(r => ({time: r[0], value: r[1]})));
   }
@@ -342,17 +378,30 @@ export class ChartView {
   }
 
   _applyLineType() {
-    // straight segments at level 0 (raw); let the renderer curve the rest a touch
-    this.series.line.applyOptions({lineType: this.smoothLevel === 0
+    // straight segments when the window is empty (raw closes); let the renderer
+    // curve the rest a touch
+    const {back, fwd} = smoothWindow(this._smoothSetting());
+    this.series.line.applyOptions({lineType: back + fwd === 0
       ? LightweightCharts.LineType.Simple : LightweightCharts.LineType.Curved});
+  }
+
+  /** Mirror the smoothing state into its controls. */
+  _syncSmoothControls() {
+    const custom = this.smoothIsCustom;
+    $('#btnSmoothCustom').classList.toggle('on', custom);
+    $('#smoothPreset').hidden = custom;
+    $('#smoothWindow').hidden = !custom;
+    $('#lineSmooth').value = this.smoothLevel;
+    $('#smoothVal').textContent = this.smoothLevel;
+    $('#smoothBack').value = this.smoothCustom.back;
+    $('#smoothFwd').value = this.smoothCustom.fwd;
   }
 
   _syncPriceModeControls() {
     $('#btnOhlc').classList.toggle('on', this.showOhlc);
     $('#btnLine').classList.toggle('on', this.showLine);
     $('#smoothWrap').classList.toggle('on', this.showLine);
-    $('#lineSmooth').value = this.smoothLevel;
-    $('#smoothVal').textContent = this.smoothLevel;
+    this._syncSmoothControls();
     this._applyLineType();
   }
 
@@ -378,6 +427,11 @@ export class ChartView {
     $('#btnOhlc').onclick = () => this.setPriceSeries('ohlc', !this.showOhlc);
     $('#btnLine').onclick = () => this.setPriceSeries('line', !this.showLine);
     $('#lineSmooth').oninput = event => this.setSmoothLevel(+event.target.value);
+    $('#btnSmoothCustom').onclick = () => this.setSmoothCustom(!this.smoothIsCustom);
+    const onWindowInput = () =>
+      this.setSmoothWindow(+$('#smoothBack').value, +$('#smoothFwd').value);
+    $('#smoothBack').onchange = onWindowInput;
+    $('#smoothFwd').onchange = onWindowInput;
     $('#btnEma').onclick = event =>
       this.setShowEmas(event.target.classList.toggle('on'));
     $('#btnMarks').onclick = event =>

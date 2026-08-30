@@ -178,6 +178,14 @@ main>aside{flex:0 0 var(--rail);width:var(--rail);background:var(--panel);
 .tb-smooth input[type=range]::-moz-range-thumb{width:13px;height:13px;border:none;
   border-radius:50%;background:var(--accent);cursor:ew-resize}
 .tb-smooth.on{visibility:visible}
+.tb-smooth #smoothPreset,.tb-smooth #smoothWindow{display:inline-flex;align-items:center;gap:6px}
+.tb-smooth #smoothPreset[hidden],.tb-smooth #smoothWindow[hidden]{display:none}
+.tb-smooth input[type=number]{width:46px;background:var(--bg);border:1px solid var(--border);
+  color:var(--text);border-radius:5px;padding:1px 4px;font:inherit;
+  font-variant-numeric:tabular-nums}
+.tb-smooth button{background:none;border:1px solid var(--border);border-radius:5px;
+  color:var(--muted);padding:1px 6px;font:inherit;cursor:pointer}
+.tb-smooth button.on{color:var(--accentText);border-color:var(--accent)}
 /* wide enough for '10' so dragging the slider cannot reflow the row */
 .tb-smooth b{color:var(--accentText);min-width:20px;text-align:center;font-variant-numeric:tabular-nums}
 
