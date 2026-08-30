@@ -66,6 +66,11 @@
           <button id="trendSlow" class="on" title="Trend measured on 1h bars">1h</button>
           <span class="cmp-ctrl">
             smooth
+            <select id="trendFilter" title="Which filter shapes the line whose slope is measured">
+              <option value="sg">SG</option>
+              <option value="sma">SMA</option>
+              <option value="ema">EMA</option>
+            </select>
             <span id="trendPreset" title="Smoothing level of the line whose slope is measured">
               <input type="range" id="trendLevel" min="0" max="10" step="1" value="7">
               <b id="trendLevelVal">7</b>

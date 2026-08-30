@@ -1,33 +1,46 @@
-/* The smooth price line: Savitzky–Golay filtering, either at one of 11 preset
-   levels (0..10) or over a custom window the user types in.
+/* The smooth price line: one of three filters — Savitzky–Golay, SMA or EMA —
+   over a window that is either a preset level (0..10) or a custom {back, fwd}
+   the user types in.
 
-   A plain moving average flattens peaks and lags turns — it blurs structure as
-   much as noise. Savitzky–Golay fits a local PARABOLA (least squares) in each
-   window and takes its centre, so it strips high-frequency noise while keeping
-   the real swings, peaks and troughs. Level 0 is the raw close; each level
-   widens the window by 4 bars (level 10 is roughly a 41-bar fit). Points keep
-   their original bar timestamps so markers and price lines anchor exactly.
+   Every filter here is the same shape: a fixed set of weights over the bars
+   from `back` behind to `fwd` ahead of each bar, summing to 1. Only the shape
+   of the weights differs:
 
-   The window need not be symmetric: {back, fwd} fits the parabola over `back`
-   bars behind and `fwd` bars ahead and still reads it at the current bar, so
-   `{back: 20, fwd: 0}` is a causal (non-repainting) filter and `{back: 5,
-   fwd: 5}` is the classic 11-bar centred one. */
+     sg   least-squares PARABOLA through the window, read at the centre. Strips
+          high-frequency noise while keeping peaks, troughs and the real swings
+          — an average of any kind flattens exactly those.
+     sma  flat weights: the plain mean of the window.
+     ema  exponential decay away from the current bar, span = that side's
+          length. With fwd = 0 this is the familiar EMA, truncated at `back`
+          bars instead of running forever.
+
+   A preset level widens the window by 2 bars per side per level (level 10 is
+   roughly a 41-bar window); level 0 is the raw close. Points keep their
+   original bar timestamps so markers and price lines anchor exactly.
+
+   The window need not be symmetric: `{back: 20, fwd: 0}` is causal (nothing to
+   the right, so it never repaints) while `{back: 5, fwd: 5}` is the classic
+   centred one that does. */
 
 export const MAX_LEVEL = 10;
 export const MAX_BARS = 500;      // per side; a wider fit is a different tool
+export const FILTERS = ['sg', 'sma', 'ema'];
+export const DEFAULT_FILTER = 'sg';
 
 const weightCache = new Map();
 
 const clampBars = value => Math.max(0, Math.min(MAX_BARS, Math.round(+value) || 0));
 
-/** Normalise a smoothing setting into a {back, fwd} bar window. A number (or
-    anything else) is read as a preset level; `{back, fwd}` passes through. */
+/** Normalise a smoothing setting into {kind, back, fwd}. A number (or anything
+    else) is read as a preset level of the default filter; an object carries a
+    custom window and, optionally, which filter to run over it. */
 export function smoothWindow(setting) {
   if (setting && typeof setting === 'object') {
-    return {back: clampBars(setting.back), fwd: clampBars(setting.fwd)};
+    const kind = FILTERS.includes(setting.kind) ? setting.kind : DEFAULT_FILTER;
+    return {kind, back: clampBars(setting.back), fwd: clampBars(setting.fwd)};
   }
   const level = Math.max(0, Math.min(MAX_LEVEL, setting | 0));
-  return {back: level * 2, fwd: level * 2};
+  return {kind: DEFAULT_FILTER, back: level * 2, fwd: level * 2};
 }
 
 /** Least-squares quadratic fit over x = -back..fwd, read at x = 0: the weights
@@ -75,22 +88,66 @@ export function sgWeights(back, fwd) {
   return sgCoefWeights(back, fwd, 0);
 }
 
-/** Candle rows -> [{time, value}] closes, smoothed with `setting` (a preset
-    level, or a custom `{back, fwd}` window). Near the ends of the data each
-    side shrinks to what actually fits. */
-export function smoothCloses(candles, setting) {
+/** Flat weights: the plain mean of the window. */
+function smaWeights(back, fwd) {
+  return new Array(back + fwd + 1).fill(1 / (back + fwd + 1));
+}
+
+/** Exponential weights, decaying away from the current bar. Each side uses the
+    standard span factor a = 2/(N+1) for its own length, so `{back: N, fwd: 0}`
+    is an ordinary N-span EMA cut off at N bars. */
+function emaWeights(back, fwd) {
+  const decay = side => (side > 0 ? 1 - 2 / (side + 1) : 0);
+  const backDecay = decay(back), fwdDecay = decay(fwd);
+  const weights = new Array(back + fwd + 1);
+  let total = 0;
+  for (let x = -back; x <= fwd; x++) {
+    const weight = x === 0 ? 1
+      : Math.pow(x < 0 ? backDecay : fwdDecay, Math.abs(x));
+    weights[x + back] = weight;
+    total += weight;
+  }
+  for (let i = 0; i < weights.length; i++) weights[i] /= total;
+  return weights;
+}
+
+/** The weights of filter `kind` over the window -back..fwd (they sum to 1). */
+export function filterWeights(kind, back, fwd) {
+  const key = kind + ':' + back + ':' + fwd;
+  const cached = weightCache.get(key);
+  if (cached) return cached;
+  const weights = kind === 'sma' ? smaWeights(back, fwd)
+    : kind === 'ema' ? emaWeights(back, fwd)
+    : sgWeights(back, fwd);
+  weightCache.set(key, weights);
+  return weights;
+}
+
+/** Candle rows -> smoothed closes as a Float64Array, one per bar. Near the ends
+    of the data each side of the window shrinks to what actually fits. */
+export function smoothValues(candles, setting) {
   const n = candles.length;
-  const {back, fwd} = smoothWindow(setting);
-  if (back + fwd === 0 || n < 5) return candles.map(r => ({time: r[0], value: r[4]}));
-  const out = new Array(n);
+  const {kind, back, fwd} = smoothWindow(setting);
+  const out = new Float64Array(n);
+  const raw = i => candles[i][4];
+  if (back + fwd === 0 || n < 5) {
+    for (let i = 0; i < n; i++) out[i] = raw(i);
+    return out;
+  }
   for (let i = 0; i < n; i++) {
     const b = Math.min(back, i);                 // largest window that fits
     const f = Math.min(fwd, n - 1 - i);
-    if (b + f < 2) { out[i] = {time: candles[i][0], value: candles[i][4]}; continue; }
-    const weights = sgWeights(b, f);
+    if (b + f < 1 || (kind === 'sg' && b + f < 2)) { out[i] = raw(i); continue; }
+    const weights = filterWeights(kind, b, f);
     let value = 0;
-    for (let k = -b; k <= f; k++) value += weights[k + b] * candles[i + k][4];
-    out[i] = {time: candles[i][0], value};
+    for (let k = -b; k <= f; k++) value += weights[k + b] * raw(i + k);
+    out[i] = value;
   }
   return out;
+}
+
+/** Candle rows -> [{time, value}] smoothed closes, ready for the chart. */
+export function smoothCloses(candles, setting) {
+  const values = smoothValues(candles, setting);
+  return candles.map((row, i) => ({time: row[0], value: values[i]}));
 }

@@ -190,6 +190,8 @@ main>aside{flex:0 0 var(--rail);width:var(--rail);background:var(--panel);
 .tb-smooth input[type=number]{width:46px;background:var(--bg);border:1px solid var(--border);
   color:var(--text);border-radius:5px;padding:1px 4px;font:inherit;
   font-variant-numeric:tabular-nums}
+.tb-smooth select,#trendBar select{background:var(--panel2);border:1px solid var(--border);
+  color:var(--text);border-radius:5px;padding:1px 4px;font:inherit;cursor:pointer}
 .tb-smooth button{background:none;border:1px solid var(--border);border-radius:5px;
   color:var(--muted);padding:1px 6px;font:inherit;cursor:pointer}
 .tb-smooth button.on{color:var(--accentText);border-color:var(--accent)}

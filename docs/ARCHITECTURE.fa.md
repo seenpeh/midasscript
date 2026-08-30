@@ -203,7 +203,7 @@ Midas/
 │       │   └── store.js            وضعیت دادهٔ بارگذاری‌شده
 │       ├── chart/              منطق نمودار
 │       │   ├── timeframes.js       بازنمونه‌برداری در مرورگر (تابع خالص)
-│       │   ├── smoothing.js        فیلتر Savitzky–Golay (تابع خالص)
+│       │   ├── smoothing.js        فیلترهای Savitzky–Golay / SMA / EMA (تابع خالص)
 │       │   ├── theme.js            رنگ‌ها و تنظیمات مشترک نمودار
 │       │   ├── markers.js          نشانگرهای ورود/خروج/حفره
 │       │   ├── tooltip.js          راهنمای شناور و لجند

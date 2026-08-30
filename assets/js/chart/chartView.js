@@ -9,7 +9,8 @@ import {$, $$, toast} from '../core/dom.js';
 import {emit, EVENTS} from '../core/bus.js';
 import {store} from '../data/store.js';
 import {TF_ORDER, buildView, barIndexAt, nearestBar} from './timeframes.js';
-import {MAX_BARS, MAX_LEVEL, smoothCloses, smoothWindow} from '../trend/smoothing.js';
+import {DEFAULT_FILTER, FILTERS, MAX_BARS, MAX_LEVEL, smoothCloses, smoothWindow}
+  from '../trend/smoothing.js';
 import {baseChartOptions, linkTimeScales, COLORS} from './theme.js';
 import {buildMarkers, buildTradeIndex} from '../triggers/markers.js';
 import {legendHTML, LEGEND_KEYS, tradeTooltipHTML} from './tooltip.js';
@@ -17,6 +18,10 @@ import {SizeComparePane} from '../triggers/sizeCompare.js';
 import {TrendPane} from '../trend/trendPane.js';
 
 const AUTO_ZOOM_BARS = 180;    // a comfortable default zoom: this many recent bars
+
+const FILTER_LABELS = {sg: 'SG', sma: 'SMA', ema: 'EMA'};
+const FILTER_OPTIONS = FILTERS.map(
+  kind => `<option value="${kind}">${FILTER_LABELS[kind]}</option>`).join('');
 
 export class ChartView {
   constructor() {
@@ -26,6 +31,7 @@ export class ChartView {
     this.smoothLevel = 3;             // preset mode: window is level*2 each side
     this.smoothCustom = {back: 5, fwd: 5};   // custom mode: bars behind/ahead
     this.smoothIsCustom = false;
+    this.smoothKind = DEFAULT_FILTER;        // 'sg' | 'sma' | 'ema'
     this.showTrades = true;
     this.showHoles = true;
     this.showEquity = true;
@@ -155,9 +161,18 @@ export class ChartView {
     this._applySmoothing();
   }
 
-  /** What the smoothing functions take: a level, or a custom window. */
+  /** Which filter shape runs over the window. */
+  setSmoothKind(kind) {
+    this.smoothKind = FILTERS.includes(kind) ? kind : DEFAULT_FILTER;
+    this._applySmoothing();
+  }
+
+  /** What the smoothing functions take: the filter plus its window, which is
+      either the preset level's symmetric span or the typed one. */
   _smoothSetting() {
-    return this.smoothIsCustom ? this.smoothCustom : this.smoothLevel;
+    const span = this.smoothLevel * 2;
+    const window_ = this.smoothIsCustom ? this.smoothCustom : {back: span, fwd: span};
+    return {kind: this.smoothKind, ...window_};
   }
 
   _applySmoothing() {
@@ -271,6 +286,8 @@ export class ChartView {
       '</div>' +
       // its own line under the buttons: appearing here shifts nothing sideways
       '<span class="tb-smooth" id="smoothWrap">' +
+        '<select id="lineFilter" title="Which filter shapes the line">' +
+          FILTER_OPTIONS + '</select>' +
         '<span id="smoothPreset" title="Line smoothness — swipe to adjust ' +
           '(0 = raw, 10 = smoothest)">' +
           `<input id="lineSmooth" type="range" min="0" max="${MAX_LEVEL}" step="1" ` +
@@ -395,6 +412,7 @@ export class ChartView {
     $('#smoothVal').textContent = this.smoothLevel;
     $('#smoothBack').value = this.smoothCustom.back;
     $('#smoothFwd').value = this.smoothCustom.fwd;
+    $('#lineFilter').value = this.smoothKind;
   }
 
   _syncPriceModeControls() {
@@ -427,6 +445,7 @@ export class ChartView {
     $('#btnOhlc').onclick = () => this.setPriceSeries('ohlc', !this.showOhlc);
     $('#btnLine').onclick = () => this.setPriceSeries('line', !this.showLine);
     $('#lineSmooth').oninput = event => this.setSmoothLevel(+event.target.value);
+    $('#lineFilter').onchange = event => this.setSmoothKind(event.target.value);
     $('#btnSmoothCustom').onclick = () => this.setSmoothCustom(!this.smoothIsCustom);
     const onWindowInput = () =>
       this.setSmoothWindow(+$('#smoothBack').value, +$('#smoothFwd').value);
@@ -450,6 +469,10 @@ export class ChartView {
       this.trend.setLine('slow', event.target.classList.toggle('on'));
     $('#trendLevel').oninput = event => {
       this.trend.setLevel(+event.target.value);
+      this._renderTrend();
+    };
+    $('#trendFilter').onchange = event => {
+      this.trend.setKind(event.target.value);
       this._renderTrend();
     };
     $('#btnTrendCustom').onclick = () => {

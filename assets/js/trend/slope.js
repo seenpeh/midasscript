@@ -11,12 +11,16 @@
    separates out cleanly into w[i] = i / Σi²; the asymmetric case comes from
    the same normal equations, one row lower.
 
+   SMA and EMA have no fitted derivative to read, so for those the slope is the
+   central difference of the smoothed series — the slope of the polyline that
+   is actually drawn, which is the same thing the SG fit gives analytically.
+
    LOOK-AHEAD: a window with `fwd > 0` uses bars to the right of each bar, so
    the trend it feeds repaints — which is fine, because the plotted line does
    exactly the same and the two agree on screen. For a live signal set fwd = 0:
    the fit is then trailing-only and nothing here changes. */
 
-import {sgCoefWeights, smoothWindow} from './smoothing.js';
+import {sgCoefWeights, smoothValues, smoothWindow} from './smoothing.js';
 
 /** Derivative weights for the window -back..fwd, in price per bar. */
 export function sgSlopeWeights(back, fwd) {
@@ -24,13 +28,14 @@ export function sgSlopeWeights(back, fwd) {
 }
 
 /** Candle rows -> slope of the smoothed line at each bar, in price per bar.
-    `setting` is a preset level or a custom {back, fwd} window. A window too
-    small to fit a parabola falls back to the plain bar-to-bar change. */
+    `setting` is a preset level or a custom {kind, back, fwd} window. A window
+    too small to fit a parabola falls back to the plain bar-to-bar change. */
 export function smoothSlopes(candles, setting) {
   const n = candles.length;
-  const {back, fwd} = smoothWindow(setting);
+  const {kind, back, fwd} = smoothWindow(setting);
   const out = new Float64Array(n);
   if (n < 2) return out;
+  if (kind !== 'sg') return differences(smoothValues(candles, setting), out);
   for (let i = 0; i < n; i++) {
     const b = Math.min(back, i);                    // largest window that fits
     const f = Math.min(fwd, n - 1 - i);
@@ -42,6 +47,17 @@ export function smoothSlopes(candles, setting) {
     let slope = 0;
     for (let k = -b; k <= f; k++) slope += weights[k + b] * candles[i + k][4];
     out[i] = slope;
+  }
+  return out;
+}
+
+/** Central difference of a smoothed series, one-sided at the two ends. */
+function differences(values, out) {
+  const n = values.length;
+  for (let i = 0; i < n; i++) {
+    out[i] = i === 0 ? values[1] - values[0]
+      : i === n - 1 ? values[n - 1] - values[n - 2]
+      : (values[i + 1] - values[i - 1]) / 2;
   }
   return out;
 }

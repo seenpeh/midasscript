@@ -9,7 +9,7 @@
 
 import {$} from '../core/dom.js';
 import {baseChartOptions, linkTimeScales, COLORS} from '../chart/theme.js';
-import {MAX_BARS, MAX_LEVEL} from './smoothing.js';
+import {DEFAULT_FILTER, FILTERS, MAX_BARS, MAX_LEVEL} from './smoothing.js';
 import {NEUTRAL, TREND_DEFAULTS, trendSeries} from './fuzzy.js';
 
 /** Sample `points` (time-ordered) at each of `candles`' open times, holding the
@@ -31,6 +31,7 @@ export class TrendPane {
     this.level = TREND_DEFAULTS.smooth;
     this.custom = {back: 5, fwd: 5};   // the typed window, when isCustom
     this.isCustom = false;
+    this.kind = DEFAULT_FILTER;        // 'sg' | 'sma' | 'ema'
     this.gain = TREND_DEFAULTS.gain;
     this.showFast = true;      // the 5m line
     this.showSlow = true;      // the 1h line
@@ -41,6 +42,7 @@ export class TrendPane {
   toggle(visible) { this.visible = visible; }
   setLevel(level) { this.level = Math.max(0, Math.min(MAX_LEVEL, Math.round(level) || 0)); }
   setCustom(on) { this.isCustom = !!on; }
+  setKind(kind) { this.kind = FILTERS.includes(kind) ? kind : DEFAULT_FILTER; }
 
   /** Custom window: `back` bars behind each bar, `fwd` ahead — same meaning as
       the price line's m·n control. */
@@ -51,8 +53,13 @@ export class TrendPane {
     };
   }
 
-  /** What the trend maths takes: a preset level, or the typed window. */
-  smoothSetting() { return this.isCustom ? this.custom : this.level; }
+  /** What the trend maths takes: the filter plus its window — the same shape
+      the price line's smoothing takes. */
+  smoothSetting() {
+    const span = this.level * 2;
+    const window_ = this.isCustom ? this.custom : {back: span, fwd: span};
+    return {kind: this.kind, ...window_};
+  }
 
   setGain(gain) { this.gain = Math.max(0.5, Math.min(20, +gain || TREND_DEFAULTS.gain)); }
 
@@ -131,6 +138,7 @@ export class TrendPane {
     if (preset) preset.hidden = this.isCustom;
     if (window_) window_.hidden = !this.isCustom;
     $('#btnTrendCustom') && $('#btnTrendCustom').classList.toggle('on', this.isCustom);
+    set('#trendFilter', this.kind);
     set('#trendGain', this.gain);
     text('#trendGainVal', this.gain.toFixed(1));
     $('#trendFast') && $('#trendFast').classList.toggle('on', this.showFast);
