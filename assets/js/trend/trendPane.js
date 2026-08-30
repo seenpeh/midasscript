@@ -9,7 +9,7 @@
 
 import {$} from '../core/dom.js';
 import {baseChartOptions, linkTimeScales, COLORS} from '../chart/theme.js';
-import {MAX_LEVEL} from './smoothing.js';
+import {MAX_BARS, MAX_LEVEL} from './smoothing.js';
 import {NEUTRAL, TREND_DEFAULTS, trendSeries} from './fuzzy.js';
 
 /** Sample `points` (time-ordered) at each of `candles`' open times, holding the
@@ -28,7 +28,9 @@ export function alignToBars(points, candles) {
 export class TrendPane {
   constructor() {
     this.visible = false;
-    this.level = TREND_DEFAULTS.level;
+    this.level = TREND_DEFAULTS.smooth;
+    this.custom = {back: 5, fwd: 5};   // the typed window, when isCustom
+    this.isCustom = false;
     this.gain = TREND_DEFAULTS.gain;
     this.showFast = true;      // the 5m line
     this.showSlow = true;      // the 1h line
@@ -38,6 +40,20 @@ export class TrendPane {
 
   toggle(visible) { this.visible = visible; }
   setLevel(level) { this.level = Math.max(0, Math.min(MAX_LEVEL, Math.round(level) || 0)); }
+  setCustom(on) { this.isCustom = !!on; }
+
+  /** Custom window: `back` bars behind each bar, `fwd` ahead — same meaning as
+      the price line's m·n control. */
+  setWindow(back, fwd) {
+    this.custom = {
+      back: Math.max(0, Math.min(MAX_BARS, Math.round(back) || 0)),
+      fwd: Math.max(0, Math.min(MAX_BARS, Math.round(fwd) || 0)),
+    };
+  }
+
+  /** What the trend maths takes: a preset level, or the typed window. */
+  smoothSetting() { return this.isCustom ? this.custom : this.level; }
+
   setGain(gain) { this.gain = Math.max(0.5, Math.min(20, +gain || TREND_DEFAULTS.gain)); }
 
   setLine(which, on) {
@@ -72,7 +88,7 @@ export class TrendPane {
   }
 
   _setData(view, sources) {
-    const options = {level: this.level, gain: this.gain};
+    const options = {smooth: this.smoothSetting(), gain: this.gain};
     for (const [key, candles] of [['fast', sources.fast], ['slow', sources.slow]]) {
       this.series[key].setData(
         alignToBars(trendSeries(candles, options), view.candles));
@@ -109,6 +125,12 @@ export class TrendPane {
     const text = (id, value) => { const el = $(id); if (el) el.textContent = value; };
     set('#trendLevel', this.level);
     text('#trendLevelVal', this.level);
+    set('#trendBack', this.custom.back);
+    set('#trendFwd', this.custom.fwd);
+    const preset = $('#trendPreset'), window_ = $('#trendWindow');
+    if (preset) preset.hidden = this.isCustom;
+    if (window_) window_.hidden = !this.isCustom;
+    $('#btnTrendCustom') && $('#btnTrendCustom').classList.toggle('on', this.isCustom);
     set('#trendGain', this.gain);
     text('#trendGainVal', this.gain.toFixed(1));
     $('#trendFast') && $('#trendFast').classList.toggle('on', this.showFast);

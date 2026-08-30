@@ -6,48 +6,41 @@
    the drawn curve, in price per bar. No second smoothing pass, no extra window
    to tune, and nothing that can drift away from the line on screen.
 
-   For a symmetric window the parabola's linear coefficient separates out
-   cleanly, leaving weights w[i] = i / Σi² — so the derivative is a single
-   weighted sum, exactly like the value itself.
+   The window is whatever the line uses — a preset level, or a custom
+   {back, fwd}. For a symmetric window the parabola's linear coefficient
+   separates out cleanly into w[i] = i / Σi²; the asymmetric case comes from
+   the same normal equations, one row lower.
 
-   LOOK-AHEAD: the window is symmetric, so bar i uses m bars to its right. The
-   plotted line already does this, so the slope agrees with what you see. A
-   live signal needs one-sided weights instead: replace `sgSlopeWeights` with a
-   trailing-window fit and nothing else here changes. */
+   LOOK-AHEAD: a window with `fwd > 0` uses bars to the right of each bar, so
+   the trend it feeds repaints — which is fine, because the plotted line does
+   exactly the same and the two agree on screen. For a live signal set fwd = 0:
+   the fit is then trailing-only and nothing here changes. */
 
-import {MAX_LEVEL} from './smoothing.js';
+import {sgCoefWeights, smoothWindow} from './smoothing.js';
 
-const weightCache = new Map();
-
-/** Derivative weights for half-width m: w[i] = i / Σi², summing i²=m(m+1)(2m+1)/3. */
-export function sgSlopeWeights(m) {
-  if (m <= 0) return [0];
-  if (weightCache.has(m)) return weightCache.get(m);
-  const sumSquares = m * (m + 1) * (2 * m + 1) / 3;
-  const weights = new Array(2 * m + 1);
-  for (let i = -m; i <= m; i++) weights[i + m] = i / sumSquares;
-  weightCache.set(m, weights);
-  return weights;
+/** Derivative weights for the window -back..fwd, in price per bar. */
+export function sgSlopeWeights(back, fwd) {
+  return sgCoefWeights(back, fwd, 1);
 }
 
-/** Candle rows -> slope of the level-`level` smoothed line at each bar,
-    in price per bar. Level 0 has no window, so it falls back to the plain
-    bar-to-bar change of the raw closes. */
-export function smoothSlopes(candles, level) {
+/** Candle rows -> slope of the smoothed line at each bar, in price per bar.
+    `setting` is a preset level or a custom {back, fwd} window. A window too
+    small to fit a parabola falls back to the plain bar-to-bar change. */
+export function smoothSlopes(candles, setting) {
   const n = candles.length;
-  const clamped = Math.max(0, Math.min(MAX_LEVEL, level | 0));
+  const {back, fwd} = smoothWindow(setting);
   const out = new Float64Array(n);
   if (n < 2) return out;
-  const halfWidth = clamped * 2;
   for (let i = 0; i < n; i++) {
-    const m = Math.min(halfWidth, i, n - 1 - i);    // largest window that fits
-    if (m <= 0) {
+    const b = Math.min(back, i);                    // largest window that fits
+    const f = Math.min(fwd, n - 1 - i);
+    if (b + f < 2) {
       out[i] = i > 0 ? candles[i][4] - candles[i - 1][4] : 0;
       continue;
     }
-    const weights = sgSlopeWeights(m);
+    const weights = sgSlopeWeights(b, f);
     let slope = 0;
-    for (let k = -m; k <= m; k++) slope += weights[k + m] * candles[i + k][4];
+    for (let k = -b; k <= f; k++) slope += weights[k + b] * candles[i + k][4];
     out[i] = slope;
   }
   return out;

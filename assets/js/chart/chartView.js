@@ -452,6 +452,16 @@ export class ChartView {
       this.trend.setLevel(+event.target.value);
       this._renderTrend();
     };
+    $('#btnTrendCustom').onclick = () => {
+      this.trend.setCustom(!this.trend.isCustom);
+      this._renderTrend();
+    };
+    const onTrendWindow = () => {
+      this.trend.setWindow(+$('#trendBack').value, +$('#trendFwd').value);
+      this._renderTrend();
+    };
+    $('#trendBack').onchange = onTrendWindow;
+    $('#trendFwd').onchange = onTrendWindow;
     $('#trendGain').oninput = event => {
       this.trend.setGain(+event.target.value);
       this._renderTrend();

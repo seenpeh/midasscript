@@ -111,6 +111,13 @@ main{flex:1;display:flex;min-height:0;overflow:hidden}
   width:13px;height:13px;border-radius:50%;background:var(--accent);cursor:ew-resize}
 #trendBar b{color:var(--text);min-width:34px;text-align:center;
   font-variant-numeric:tabular-nums}
+#trendBar #trendPreset,#trendBar #trendWindow{display:inline-flex;align-items:center;gap:5px}
+#trendBar #trendPreset[hidden],#trendBar #trendWindow[hidden]{display:none}
+#trendBar input[type=number]{width:46px;background:var(--bg);border:1px solid var(--border);
+  color:var(--text);border-radius:5px;padding:1px 4px;font:inherit;
+  font-variant-numeric:tabular-nums}
+#trendBar #btnTrendCustom.on{background:rgba(76,141,255,.18);border-color:var(--accent);
+  color:var(--accentText)}
 #sizecmp{height:clamp(120px,17vh,180px);border-top:1px solid var(--border);
   display:none;flex-direction:column}
 main>aside{flex:0 0 var(--rail);width:var(--rail);background:var(--panel);

@@ -18,12 +18,14 @@
    That makes the number self-scaling — comparable between 5m and 1h, and
    between a calm month and a violent one — and leaves `gain` as the single
    knob that says how many ATR-per-bar counts as "fully trending". `gain` and
-   the smoothing `level` are what gets fine-tuned. */
+   the smoothing window are what gets fine-tuned. */
 
 import {smoothSlopes} from './slope.js';
 
 export const TREND_DEFAULTS = {
-  level: 7,      // smoothing level of the line whose slope is measured (0..10)
+  smooth: 7,     // window of the line whose slope is measured: a preset level
+                 // (0..10) or a custom {back, fwd} bar count, exactly as the
+                 // price line takes it
   gain: 5,       // slope/ATR multiplier before atan — the sensitivity knob
   atrLen: 14,    // ATR window, in bars of the timeframe being measured
 };
@@ -65,8 +67,8 @@ export function fuzzyFromSlope(slope, atrValue, gain) {
 /** Candle rows -> [{time, value}] fuzzy trend, computed on those bars' own
     timeframe. Feed it 5m rows for the 5m reading, 1h rows for the 1h one. */
 export function trendSeries(candles, options = {}) {
-  const {level, gain, atrLen} = {...TREND_DEFAULTS, ...options};
-  const slopes = smoothSlopes(candles, level);
+  const {smooth, gain, atrLen} = {...TREND_DEFAULTS, ...options};
+  const slopes = smoothSlopes(candles, smooth);
   const ranges = atr(candles, atrLen);
   return candles.map((candle, i) => ({
     time: candle[0], value: fuzzyFromSlope(slopes[i], ranges[i], gain),

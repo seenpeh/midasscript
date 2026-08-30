@@ -30,20 +30,21 @@ export function smoothWindow(setting) {
   return {back: level * 2, fwd: level * 2};
 }
 
-/** Quadratic SG smoothing weights over x = -back..fwd, read at x = 0 (they sum
-    to 1). Solves the least-squares normal equations through the first row of
-    the inverse moment matrix, so an asymmetric window is no special case. */
-export function sgWeights(back, fwd) {
-  const key = back + ':' + fwd;
+/** Least-squares quadratic fit over x = -back..fwd, read at x = 0: the weights
+    that produce coefficient `order` of the parabola (0 = value, 1 = slope per
+    bar, 2 = curvature/2). Solving the normal equations through the inverse
+    moment matrix makes an asymmetric window no special case. */
+export function sgCoefWeights(back, fwd, order) {
+  const key = back + ':' + fwd + ':' + order;
   const cached = weightCache.get(key);
   if (cached) return cached;
 
   const count = back + fwd + 1;
+  const weights = new Array(count).fill(0);
   if (count < 3) {                        // too few points to pin a parabola
-    const identity = new Array(count).fill(0);
-    identity[back] = 1;
-    weightCache.set(key, identity);
-    return identity;
+    if (order === 0) weights[back] = 1;   // ... so the value is the bar itself
+    weightCache.set(key, weights);
+    return weights;
   }
   // power sums S0..S4 of the offsets
   const s = [0, 0, 0, 0, 0];
@@ -51,23 +52,27 @@ export function sgWeights(back, fwd) {
     let power = 1;
     for (let k = 0; k < 5; k++) { s[k] += power; power *= x; }
   }
-  // first row of the inverse of [[S0,S1,S2],[S1,S2,S3],[S2,S3,S4]] (symmetric)
-  const c0 = s[2] * s[4] - s[3] * s[3];
-  const c1 = s[2] * s[3] - s[1] * s[4];
-  const c2 = s[1] * s[3] - s[2] * s[2];
-  const det = s[0] * c0 + s[1] * c1 + s[2] * c2;
-
-  const weights = new Array(count);
+  // M = [[S0,S1,S2],[S1,S2,S3],[S2,S3,S4]] (symmetric); rows of its adjugate
+  const adj = [
+    [s[2] * s[4] - s[3] * s[3], s[2] * s[3] - s[1] * s[4], s[1] * s[3] - s[2] * s[2]],
+    [s[2] * s[3] - s[1] * s[4], s[0] * s[4] - s[2] * s[2], s[1] * s[2] - s[0] * s[3]],
+    [s[1] * s[3] - s[2] * s[2], s[1] * s[2] - s[0] * s[3], s[0] * s[2] - s[1] * s[1]],
+  ];
+  const det = s[0] * adj[0][0] + s[1] * adj[0][1] + s[2] * adj[0][2];
   if (!det) {                             // degenerate: keep the bar untouched
-    weights.fill(0);
-    weights[back] = 1;
+    if (order === 0) weights[back] = 1;
   } else {
-    for (let x = -back; x <= fwd; x++) {
-      weights[x + back] = (c0 + c1 * x + c2 * x * x) / det;
-    }
+    const [a, b, c] = adj[order];
+    for (let x = -back; x <= fwd; x++) weights[x + back] = (a + b * x + c * x * x) / det;
   }
   weightCache.set(key, weights);
   return weights;
+}
+
+/** Quadratic SG smoothing weights over x = -back..fwd, read at x = 0 (they sum
+    to 1). */
+export function sgWeights(back, fwd) {
+  return sgCoefWeights(back, fwd, 0);
 }
 
 /** Candle rows -> [{time, value}] closes, smoothed with `setting` (a preset
