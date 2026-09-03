@@ -5,11 +5,15 @@
    bars, the 1h line from 1h bars — and then projected onto whatever timeframe
    the price chart happens to be showing (each chart bar takes the last trend
    value known at its open). So switching the price chart between 5m and 1D
-   changes the resolution you view them at, never the numbers themselves. */
+   changes the resolution you view them at, never the numbers themselves.
+
+   The line whose slope is measured is the SAME smooth line the price chart
+   draws: filter and window come straight from the chart's smoothing control, so
+   the two never drift apart. The pane owns only `gain` (slope sensitivity) and
+   which of the two lines are shown. */
 
 import {$} from '../core/dom.js';
 import {baseChartOptions, linkTimeScales, COLORS} from '../chart/theme.js';
-import {DEFAULT_FILTER, FILTERS, MAX_BARS, MAX_LEVEL} from './smoothing.js';
 import {NEUTRAL, TREND_DEFAULTS, trendSeries} from './fuzzy.js';
 
 /** Sample `points` (time-ordered) at each of `candles`' open times, holding the
@@ -28,10 +32,6 @@ export function alignToBars(points, candles) {
 export class TrendPane {
   constructor() {
     this.visible = false;
-    this.level = TREND_DEFAULTS.smooth;
-    this.custom = {back: 5, fwd: 5};   // the typed window, when isCustom
-    this.isCustom = false;
-    this.kind = DEFAULT_FILTER;        // 'sg' | 'sma' | 'ema'
     this.gain = TREND_DEFAULTS.gain;
     this.showFast = true;      // the 5m line
     this.showSlow = true;      // the 1h line
@@ -40,26 +40,6 @@ export class TrendPane {
   }
 
   toggle(visible) { this.visible = visible; }
-  setLevel(level) { this.level = Math.max(0, Math.min(MAX_LEVEL, Math.round(level) || 0)); }
-  setCustom(on) { this.isCustom = !!on; }
-  setKind(kind) { this.kind = FILTERS.includes(kind) ? kind : DEFAULT_FILTER; }
-
-  /** Custom window: `back` bars behind each bar, `fwd` ahead — same meaning as
-      the price line's m·n control. */
-  setWindow(back, fwd) {
-    this.custom = {
-      back: Math.max(0, Math.min(MAX_BARS, Math.round(back) || 0)),
-      fwd: Math.max(0, Math.min(MAX_BARS, Math.round(fwd) || 0)),
-    };
-  }
-
-  /** What the trend maths takes: the filter plus its window — the same shape
-      the price line's smoothing takes. */
-  smoothSetting() {
-    const span = this.level * 2;
-    const window_ = this.isCustom ? this.custom : {back: span, fwd: span};
-    return {kind: this.kind, ...window_};
-  }
 
   setGain(gain) { this.gain = Math.max(0.5, Math.min(20, +gain || TREND_DEFAULTS.gain)); }
 
@@ -78,8 +58,10 @@ export class TrendPane {
   }
 
   /** (Re)draw for the current view. `sources` is {fast, slow}: the 5m and 1h
-      candle rows the two lines are computed from. */
-  render(view, priceChart, sources) {
+      candle rows the two lines are computed from. `smooth` is the chart's own
+      smoothing setting ({kind, back, fwd}), so the slope is read off exactly the
+      line the price chart draws. */
+  render(view, priceChart, sources, smooth) {
     const pane = $('#trend');
     if (!pane) return;
     $('#btnTrend') && $('#btnTrend').classList.toggle('on', this.visible);
@@ -90,12 +72,12 @@ export class TrendPane {
     }
     pane.style.display = 'flex';
     if (!this.chart) this._create(priceChart);
-    this._setData(view, sources);
+    this._setData(view, sources, smooth);
     this._syncControls();
   }
 
-  _setData(view, sources) {
-    const options = {smooth: this.smoothSetting(), gain: this.gain};
+  _setData(view, sources, smooth) {
+    const options = {smooth, gain: this.gain};
     for (const [key, candles] of [['fast', sources.fast], ['slow', sources.slow]]) {
       this.series[key].setData(
         alignToBars(trendSeries(candles, options), view.candles));
@@ -130,15 +112,6 @@ export class TrendPane {
   _syncControls() {
     const set = (id, value) => { const el = $(id); if (el) el.value = value; };
     const text = (id, value) => { const el = $(id); if (el) el.textContent = value; };
-    set('#trendLevel', this.level);
-    text('#trendLevelVal', this.level);
-    set('#trendBack', this.custom.back);
-    set('#trendFwd', this.custom.fwd);
-    const preset = $('#trendPreset'), window_ = $('#trendWindow');
-    if (preset) preset.hidden = this.isCustom;
-    if (window_) window_.hidden = !this.isCustom;
-    $('#btnTrendCustom') && $('#btnTrendCustom').classList.toggle('on', this.isCustom);
-    set('#trendFilter', this.kind);
     set('#trendGain', this.gain);
     text('#trendGainVal', this.gain.toFixed(1));
     $('#trendFast') && $('#trendFast').classList.toggle('on', this.showFast);

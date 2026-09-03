@@ -64,22 +64,8 @@
           <span class="pane-tag">Fuzzy trend</span>
           <button id="trendFast" class="on" title="Trend measured on 5m bars">5m</button>
           <button id="trendSlow" class="on" title="Trend measured on 1h bars">1h</button>
-          <span class="cmp-ctrl">
-            smooth
-            <select id="trendFilter" title="Which filter shapes the line whose slope is measured">
-              <option value="sg">SG</option>
-              <option value="sma">SMA</option>
-              <option value="ema">EMA</option>
-            </select>
-            <span id="trendPreset" title="Smoothing level of the line whose slope is measured">
-              <input type="range" id="trendLevel" min="0" max="10" step="1" value="7">
-              <b id="trendLevelVal">7</b>
-            </span>
-            <span id="trendWindow" hidden title="Custom window: bars fitted behind and ahead of each bar. 0 ahead = causal, no repainting.">
-              back<input type="number" id="trendBack" min="0" max="500" step="1" value="5">
-              fwd<input type="number" id="trendFwd" min="0" max="500" step="1" value="5">
-            </span>
-            <button id="btnTrendCustom" title="Type an exact window instead of using the preset levels">m·n</button>
+          <span class="cmp-ctrl" title="The slope is read off the same smooth line the chart draws — set its filter and window with the chart's smooth control">
+            slope of the chart's smooth line
           </span>
           <span class="cmp-ctrl" title="Slope sensitivity: how many ATR per bar counts as fully trending">
             gain

@@ -1,59 +1,33 @@
-/* The instantaneous slope of the smoothed price line.
+/* The slope of the smoothed price line — the exact line the chart draws.
 
-   `smoothing.js` fits a local PARABOLA to the closes around each bar and takes
-   its centre value — that is the curve you see. This module takes the same
-   fit's FIRST DERIVATIVE at that same point: the exact instantaneous slope of
-   the drawn curve, in price per bar. No second smoothing pass, no extra window
-   to tune, and nothing that can drift away from the line on screen.
+   `smoothing.js` produces one smoothed close per bar (SG, SMA or EMA over the
+   chosen window); the drawn line is the polyline through those points. The
+   trend measures THAT line's slope, so it can never disagree in sign or shape
+   with what is on screen: the slope at each bar is the central difference of
+   the smoothed series, one-sided at the two ends, in price per bar.
 
-   The window is whatever the line uses — a preset level, or a custom
-   {back, fwd}. For a symmetric window the parabola's linear coefficient
-   separates out cleanly into w[i] = i / Σi²; the asymmetric case comes from
-   the same normal equations, one row lower.
-
-   SMA and EMA have no fitted derivative to read, so for those the slope is the
-   central difference of the smoothed series — the slope of the polyline that
-   is actually drawn, which is the same thing the SG fit gives analytically.
+   (An earlier version read the SG fit's analytic first derivative instead. For
+   a symmetric window the two agree, but for a strongly asymmetric one — say
+   back 20, fwd 120 — the local parabola can tilt UP at its centre while the
+   sequence of plotted centres falls, so the analytic slope took the opposite
+   sign to the visible line. The difference of the drawn values has no such gap.)
 
    LOOK-AHEAD: a window with `fwd > 0` uses bars to the right of each bar, so
-   the trend it feeds repaints — which is fine, because the plotted line does
-   exactly the same and the two agree on screen. For a live signal set fwd = 0:
-   the fit is then trailing-only and nothing here changes. */
+   the smoothed line — and this slope with it — repaints. That is fine, because
+   the plotted line does exactly the same. For a live signal set fwd = 0. */
 
-import {sgCoefWeights, smoothValues, smoothWindow} from './smoothing.js';
-
-/** Derivative weights for the window -back..fwd, in price per bar. */
-export function sgSlopeWeights(back, fwd) {
-  return sgCoefWeights(back, fwd, 1);
-}
+import {smoothValues} from './smoothing.js';
 
 /** Candle rows -> slope of the smoothed line at each bar, in price per bar.
-    `setting` is a preset level or a custom {kind, back, fwd} window. A window
-    too small to fit a parabola falls back to the plain bar-to-bar change. */
+    `setting` is a preset level or a custom {kind, back, fwd} window. */
 export function smoothSlopes(candles, setting) {
-  const n = candles.length;
-  const {kind, back, fwd} = smoothWindow(setting);
-  const out = new Float64Array(n);
-  if (n < 2) return out;
-  if (kind !== 'sg') return differences(smoothValues(candles, setting), out);
-  for (let i = 0; i < n; i++) {
-    const b = Math.min(back, i);                    // largest window that fits
-    const f = Math.min(fwd, n - 1 - i);
-    if (b + f < 2) {
-      out[i] = i > 0 ? candles[i][4] - candles[i - 1][4] : 0;
-      continue;
-    }
-    const weights = sgSlopeWeights(b, f);
-    let slope = 0;
-    for (let k = -b; k <= f; k++) slope += weights[k + b] * candles[i + k][4];
-    out[i] = slope;
-  }
-  return out;
+  return differences(smoothValues(candles, setting), new Float64Array(candles.length));
 }
 
 /** Central difference of a smoothed series, one-sided at the two ends. */
 function differences(values, out) {
   const n = values.length;
+  if (n < 2) return out;
   for (let i = 0; i < n; i++) {
     out[i] = i === 0 ? values[1] - values[0]
       : i === n - 1 ? values[n - 1] - values[n - 2]

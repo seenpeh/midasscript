@@ -18,7 +18,9 @@ export function baseChartOptions() {
   return {
     layout: {background: {color: '#0e1116'}, textColor: '#9aa4b2', fontSize: 11},
     grid: {vertLines: {color: '#1a1f27'}, horzLines: {color: '#1a1f27'}},
-    rightPriceScale: {borderColor: '#262d38'},
+    // a fixed axis width on every pane keeps their plot areas — and so their
+    // time columns — lined up vertically, whatever each pane's labels read
+    rightPriceScale: {borderColor: '#262d38', minimumWidth: 76},
     timeScale: {borderColor: '#262d38', timeVisible: true, secondsVisible: false,
       rightOffset: 6, minBarSpacing: 0.0005},
     crosshair: {mode: LightweightCharts.CrosshairMode.Normal},

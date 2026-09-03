@@ -189,6 +189,7 @@ export class ChartView {
     }
     this._applyLineVisibility();
     this._syncSmoothControls();
+    if (this.trend.visible) this._renderTrend();   // trend reads this same setting
   }
 
   _applyLineVisibility() {
@@ -409,7 +410,15 @@ export class ChartView {
     this.trend.render(this.view, this.charts.price, {
       fast: store.rawCandles,
       slow: buildView('1h', {candles: store.rawCandles, holes: store.holes}).candles,
-    });
+    }, this._trendSmoothSetting());
+  }
+
+  /** The smoothing the trend measures its slope from: the same filter and window
+      the chart's smooth line uses, so the two stay coordinated. When several
+      filters are ticked the first (in sg, sma, ema order) is the one read. */
+  _trendSmoothSetting() {
+    const kind = FILTERS.find(k => this.smoothKinds.has(k)) || DEFAULT_FILTER;
+    return this._smoothSetting(kind);
   }
 
   /* Forward-fill realized equity onto every candle timestamp. */
@@ -503,24 +512,6 @@ export class ChartView {
       this.trend.setLine('fast', event.target.classList.toggle('on'));
     $('#trendSlow').onclick = event =>
       this.trend.setLine('slow', event.target.classList.toggle('on'));
-    $('#trendLevel').oninput = event => {
-      this.trend.setLevel(+event.target.value);
-      this._renderTrend();
-    };
-    $('#trendFilter').onchange = event => {
-      this.trend.setKind(event.target.value);
-      this._renderTrend();
-    };
-    $('#btnTrendCustom').onclick = () => {
-      this.trend.setCustom(!this.trend.isCustom);
-      this._renderTrend();
-    };
-    const onTrendWindow = () => {
-      this.trend.setWindow(+$('#trendBack').value, +$('#trendFwd').value);
-      this._renderTrend();
-    };
-    $('#trendBack').onchange = onTrendWindow;
-    $('#trendFwd').onchange = onTrendWindow;
     $('#trendGain').oninput = event => {
       this.trend.setGain(+event.target.value);
       this._renderTrend();
