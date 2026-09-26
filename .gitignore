@@ -11,3 +11,6 @@ opt_results.json
 
 # Generated from docs/ARCHITECTURE.fa.md by docs/build-pdf.sh
 docs/ARCHITECTURE.fa.html
+
+# Local Claude Code preview config
+.claude/launch.json
