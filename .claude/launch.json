@@ -4,8 +4,22 @@
     {
       "name": "midasscript",
       "runtimeExecutable": "python3",
-      "runtimeArgs": ["serve.py", "--port", "8765"],
+      "runtimeArgs": [
+        "serve.py",
+        "--port",
+        "8765"
+      ],
       "port": 8765
+    },
+    {
+      "name": "midas-labeller",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": [
+        "label_serve.py",
+        "--port",
+        "8766"
+      ],
+      "port": 8766
     },
     {
       "name": "score-hero",

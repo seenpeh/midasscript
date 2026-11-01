@@ -150,6 +150,42 @@ instead of 30 overlapping ones. Selecting a trade snaps the view to whichever
 timeframe is active. See "Why this matters for backtesting" above for how
 data holes are handled during resampling.
 
+## Trend labelling (this branch)
+
+A second, separate page for hand-labelling trends — the training set for the
+supervised model. It is only the chart: candles, times, timeframes and
+rectangles. No EMAs, no trades, no backtest, no optimiser.
+
+```bash
+python3 label_serve.py   # http://localhost:8766/
+```
+
+Pick a trend (**Uptrend** green, **Sideway** yellow, **Downtrend** red), click
+the first candle of the move and then the last one. The rectangle's top and
+bottom snap to the highest high and lowest low of that range, so its height is
+measured, never dragged. Click a rectangle to select it and press Delete (or
+the Delete button) to remove it; Esc cancels a half-drawn one.
+
+Each timeframe is labelled independently — a label belongs to the timeframe it
+was drawn on, and the same candles may be an uptrend on 5m and a sideway on
+4h. Labels on one timeframe may not overlap each other; the server refuses it,
+because one candle cannot be two trends. Gaps are fine: an unlabelled candle
+is simply not training data.
+
+**The daily homework** is the bar under the header: 1152 candles on 5m, 96 on
+1h, 24 on 4h and 4 on 1D. Those are the same 96 hours of market time at four
+zoom levels. It counts candles labelled since midnight, in your own local
+time, and the page opens where the last label on that timeframe ended — the
+**Resume** button jumps back there at any time.
+
+Labels live in `labels.db` (sqlite, gitignored, one row per rectangle:
+timeframe, first and last candle time, candle count, trend, when it was
+drawn). Export them with:
+
+```bash
+sqlite3 labels.db -header -csv "select * from labels" > labels.csv
+```
+
 ## Notes
 
 Position sizing is geometric and pyramided, so results are path-dependent and

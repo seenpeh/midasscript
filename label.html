@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>MidasScript — Trend Labelling</title>
+<link rel="stylesheet" href="assets/css/label.css" />
+<script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
+</head>
+<body>
+<div id="app">
+  <header>
+    <div class="brand">
+      <h1>Trend labelling</h1>
+      <small id="range"></small>
+    </div>
+    <div class="tools">
+      <span class="seg" id="trendSeg">
+        <button data-trend="up" class="on trend-up">Uptrend</button>
+        <button data-trend="side" class="trend-side">Sideway</button>
+        <button data-trend="down" class="trend-down">Downtrend</button>
+      </span>
+      <span class="seg" id="tfSeg"></span>
+      <button id="btnResume" class="btn" title="Jump to the candle after your last label">Resume</button>
+      <button id="btnFit" class="btn" title="Fit every candle on screen">Fit all</button>
+      <button id="btnDelete" class="btn" title="Delete the selected rectangle">Delete</button>
+    </div>
+  </header>
+  <div id="homework"></div>
+  <div id="chart"></div>
+</div>
+
+<div id="err"><div class="box">
+  <h2>Couldn't load the chart</h2>
+  <p>This page <b>fetches</b> <code>5m_candles_chart.json</code> and reads and writes
+  labels over <code>/api/labels</code>. Start the labelling server from this folder:</p>
+  <code>python3 label_serve.py</code>
+  <p>then visit <code>http://localhost:8766/</code></p>
+  <p class="muted" id="errDetail"></p>
+</div></div>
+
+<script type="module" src="assets/js/label/main.js"></script>
+</body>
+</html>
