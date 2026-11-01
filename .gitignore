@@ -5,5 +5,3 @@ __pycache__/
 # Generated from docs/ARCHITECTURE.fa.md by docs/build-pdf.sh
 docs/ARCHITECTURE.fa.html
 
-# the trader's trend labels
-labels.db

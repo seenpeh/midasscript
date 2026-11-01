@@ -11,6 +11,10 @@ count never has to load the candle file.
 
 Times, not bar indices: a regenerated candle file must not silently move a
 label onto different candles.
+
+`labels.db` is committed to git — that is how the labels travel from whoever
+draws them to whoever trains on them. It is binary, so git cannot merge two
+people's edits: one person labels at a time, and everyone else pulls.
 """
 
 from __future__ import annotations
@@ -19,11 +23,11 @@ import sqlite3
 import threading
 import time
 
-TIMEFRAMES = ("5m", "1h", "4h", "1D")
+TIMEFRAMES = ("1h", "4h")
 TRENDS = ("up", "side", "down")
 
-# one day's homework, per timeframe — each is the same 96 hours of market time
-DAILY_QUOTA = {"5m": 1152, "1h": 96, "4h": 24, "1D": 4}
+# one day's homework, in candles, per timeframe
+DAILY_QUOTA = {"1h": 800, "4h": 200}
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS labels(

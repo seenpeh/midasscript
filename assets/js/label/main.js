@@ -17,14 +17,14 @@ import {RectangleTool} from './draw.js';
 import {renderHomework} from './homework.js';
 
 const CANDLE_FILE = '5m_candles_chart.json';
-const TIMEFRAMES = ['5m', '1h', '4h', '1D'];   // the four with a daily quota
+const TIMEFRAMES = ['1h', '4h'];               // the two with a daily quota
 const RESUME_BARS = 180;                       // bars on screen when resuming
 
 const boxes = new LabelBoxes();
 let dataset = {candles: [], holes: []};
 let labels = [];
 let quota = {};
-let timeframe = '5m';
+let timeframe = '1h';
 let view = null;
 let chart = null;
 let series = null;

@@ -166,21 +166,30 @@ bottom snap to the highest high and lowest low of that range, so its height is
 measured, never dragged. Click a rectangle to select it and press Delete (or
 the Delete button) to remove it; Esc cancels a half-drawn one.
 
-Each timeframe is labelled independently — a label belongs to the timeframe it
-was drawn on, and the same candles may be an uptrend on 5m and a sideway on
-4h. Labels on one timeframe may not overlap each other; the server refuses it,
+Labelling happens on **1h** and **4h** only. Each is labelled independently —
+a label belongs to the timeframe it was drawn on, and the same candles may be
+an uptrend on 1h and a sideway on 4h. Labels on one timeframe may not overlap each other; the server refuses it,
 because one candle cannot be two trends. Gaps are fine: an unlabelled candle
 is simply not training data.
 
-**The daily homework** is the bar under the header: 1152 candles on 5m, 96 on
-1h, 24 on 4h and 4 on 1D. Those are the same 96 hours of market time at four
-zoom levels. It counts candles labelled since midnight, in your own local
-time, and the page opens where the last label on that timeframe ended — the
-**Resume** button jumps back there at any time.
+**The daily homework** is the bar under the header: 800 candles on 1h and 200
+on 4h. It counts candles labelled since midnight, in your own local time, and
+the page opens where the last label on that timeframe ended — the **Resume**
+button jumps back there at any time.
 
-Labels live in `labels.db` (sqlite, gitignored, one row per rectangle:
-timeframe, first and last candle time, candle count, trend, when it was
-drawn). Export them with:
+Labels live in `labels.db` (sqlite, one row per rectangle: timeframe, first
+and last candle time, candle count, trend, when it was drawn). The file is
+**committed to git**, so the day's work travels like code:
+
+```bash
+git pull                        # start of the day: get the latest labels
+python3 label_serve.py          # label at http://localhost:8766/
+git add labels.db && git commit -m "Labels for <date>" && git push
+```
+
+Git cannot merge a binary file, so only one person labels at a time — two
+people pushing labels from the same starting point means one of them has to
+throw their day away. Export them with:
 
 ```bash
 sqlite3 labels.db -header -csv "select * from labels" > labels.csv
